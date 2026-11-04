@@ -66,21 +66,12 @@ public class ExtrasPage : Panel
     bool hostsActive;
     bool refreshing;
 
-    public ExtrasPage(MainForm host, int margin, int inner)
+    // top = wo der Inhalt beginnt (darüber liegt der Seitenkopf des Hauptfensters)
+    public ExtrasPage(MainForm host, int margin, int inner, int top)
     {
         this.host = host;
         BackColor = Theme.Bg;
-        int y = Theme.S(12);
-
-        Controls.Add(new Label
-        {
-            Text = "SONDERFUNKTIONEN",
-            ForeColor = Theme.Orange,
-            Font = Theme.MakeFont("Segoe UI", 9f, FontStyle.Bold),
-            AutoSize = false,
-            Bounds = new Rectangle(margin, y, inner, Theme.S(20)),
-        });
-        y += Theme.S(24);
+        int y = top;
 
         int rowHeight = Theme.S(84), buttonWidth = Theme.S(230);
         ts3Row = AddRow(margin, inner, ref y, rowHeight, buttonWidth,

@@ -39,11 +39,13 @@ public class MainForm : Form
     NeonButton btnMeasure, btnClean;
     NeonProgressBar bar;
     Label status;
-    Panel mainPage;
+    Panel overview, mainPage;
     ExtrasPage extras;
     BotsPage bots;
-    readonly List<TabButton> tabs = new List<TabButton>();
-    Panel[] pages;
+    readonly List<NavTile> tiles = new List<NavTile>();
+    readonly List<NeonButton> backButtons = new List<NeonButton>();
+    Panel[] pages;                 // 0 = Übersicht, 1 = Cleaner, 2 = Sonderfunktionen, 3 = Discord Bots
+    bool measuredOnce;
 
     bool busy;
     long progressDone, progressTotal;
@@ -92,27 +94,44 @@ public class MainForm : Form
         int bannerHeight = banner != null ? (int)Math.Round((double)width * banner.Height / banner.Width) : Theme.S(80);
         Controls.Add(new BannerView(banner) { Bounds = new Rectangle(0, 0, width, bannerHeight) });
 
-        // --- Menü (Reiter)
-        int tabY = bannerHeight + Theme.S(6), tabH = Theme.S(42), tabX = m - Theme.S(10);
-        foreach (string name in new[] { "CLEANER", "SONDERFUNKTIONEN", "DISCORD BOTS" })
-        {
-            var tab = new TabButton { Text = name };
-            int w = TextRenderer.MeasureText(name, tab.Font).Width + Theme.S(28);
-            tab.Bounds = new Rectangle(tabX, tabY, w, tabH);
-            int index = tabs.Count;
-            tab.Click += delegate { ShowPage(index); };
-            tabs.Add(tab);
-            Controls.Add(tab);
-            tabX += w + Theme.S(4);
-        }
-        tabs[0].Selected = true;
-        Controls.Add(new Panel { BackColor = Theme.Line, Bounds = new Rectangle(m, tabY + tabH, inner, 1) });
-
         // Die Seiten liegen übereinander; sichtbar ist immer nur eine.
-        int pageTop = tabY + tabH + 1;
-        mainPage = new Panel { BackColor = Theme.Bg, Location = new Point(0, pageTop) };
+        int pageTop = bannerHeight;
+        int contentTop = AddPageHeaderHeight();
+
+        // --- Übersicht (Startseite)
+        overview = new Panel { BackColor = Theme.Bg, Location = new Point(0, pageTop) };
+        Controls.Add(overview);
+        int oy = Theme.S(20);
+        overview.Controls.Add(Heading("ÜBERSICHT", m, oy, inner));
+        oy += Theme.S(28);
+        var tileDefs = new[]
+        {
+            new[] { "CLEANER", "FiveM-Cache leeren, %TEMP% aufräumen, Stable-Kanal setzen", "" },
+            new[] { "SONDERFUNKTIONEN", "TeamSpeak 3, SaltyChat und TS-Moved-nicht-Bugfix", "" },
+            new[] { "DISCORD BOTS", "Retro RP und Retro Business", "" },
+        };
+        int tileH = Theme.S(112), tileGlow = Theme.S(6);
+        for (int i = 0; i < tileDefs.Length; i++)
+        {
+            var tile = new NavTile
+            {
+                Text = tileDefs[i][0],
+                Detail = tileDefs[i][1],
+                Glyph = tileDefs[i][2],
+                Bounds = new Rectangle(m - tileGlow, oy, inner + 2 * tileGlow, tileH),
+            };
+            int page = i + 1;
+            tile.Click += delegate { ShowPage(page); };
+            tiles.Add(tile);
+            overview.Controls.Add(tile);
+            oy += tileH + Theme.S(10);
+        }
+
+        // --- Cleaner
+        mainPage = new Panel { BackColor = Theme.Bg, Location = new Point(0, pageTop), Visible = false };
         Controls.Add(mainPage);
-        int y = Theme.S(8);
+        AddPageHeader(mainPage, "CLEANER", m, inner);
+        int y = contentTop;
 
         // --- Wo liegt FiveM?
         installRow = new FeatureRow(Theme.S(180)) { Title = "FiveM-Installation", Bounds = new Rectangle(m, y, inner, Theme.S(82)) };
@@ -166,16 +185,18 @@ public class MainForm : Form
         mainPage.Controls.Add(btnClean);
         y += btnH + Theme.S(12);
 
-        // Alle Seiten bekommen dieselbe Höhe – die der längsten.
-        extras = new ExtrasPage(this, m, inner) { Visible = false };
-        bots = new BotsPage(m, inner) { Visible = false };
-        int pageHeight = Math.Max(y, Math.Max(extras.ContentHeight, bots.ContentHeight));
-        mainPage.Size = new Size(width, pageHeight);
-        extras.Bounds = mainPage.Bounds;
-        bots.Bounds = mainPage.Bounds;
+        // --- Sonderfunktionen und Discord Bots
+        extras = new ExtrasPage(this, m, inner, contentTop) { Visible = false, Location = new Point(0, pageTop) };
+        AddPageHeader(extras, "SONDERFUNKTIONEN", m, inner);
+        bots = new BotsPage(m, inner, contentTop) { Visible = false, Location = new Point(0, pageTop) };
+        AddPageHeader(bots, "DISCORD BOTS", m, inner);
         Controls.Add(extras);
         Controls.Add(bots);
-        pages = new Panel[] { mainPage, extras, bots };
+
+        // Alle Seiten bekommen dieselbe Höhe – die der längsten.
+        pages = new Panel[] { overview, mainPage, extras, bots };
+        int pageHeight = Math.Max(Math.Max(oy, y), Math.Max(extras.ContentHeight, bots.ContentHeight));
+        foreach (Panel p in pages) p.Size = new Size(width, pageHeight);
         y = pageTop + pageHeight;
 
         bar = new NeonProgressBar { Bounds = new Rectangle(m, y, inner, Theme.S(12)) };
@@ -275,6 +296,28 @@ public class MainForm : Form
         await MeasureAllAsync();
     }
 
+    // Seitenkopf jeder Unterseite: links „‹ ÜBERSICHT“, rechts der Seitentitel
+    static int AddPageHeaderHeight() { return Theme.S(12) + Theme.S(48) + Theme.S(14); }
+
+    void AddPageHeader(Panel page, string title, int m, int inner)
+    {
+        int top = Theme.S(12), h = Theme.S(48);
+        var back = new NeonButton { Text = "‹  ÜBERSICHT", Bounds = new Rectangle(m - Theme.S(6), top, Theme.S(170), h) };
+        back.Click += delegate { ShowPage(0); };
+        backButtons.Add(back);
+        page.Controls.Add(back);
+        page.Controls.Add(new Label
+        {
+            Text = title,
+            ForeColor = Theme.Orange,
+            Font = Theme.MakeFont("Segoe UI", 13f, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleRight,
+            AutoSize = false,
+            Bounds = new Rectangle(m + Theme.S(180), top, inner - Theme.S(180), h),
+        });
+        page.Controls.Add(new Panel { BackColor = Theme.Line, Bounds = new Rectangle(m, top + h + Theme.S(7), inner, 1) });
+    }
+
     TargetRow AddRow(string title, string subtitle, int x, ref int y, int w, int h)
     {
         var row = new TargetRow { Title = title, Subtitle = subtitle, Value = "…", Bounds = new Rectangle(x, y, w, h) };
@@ -296,10 +339,10 @@ public class MainForm : Form
         return s == null ? null : Image.FromStream(s);
     }
 
-    protected override async void OnShown(EventArgs e)
+    protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
-        await MeasureAllAsync();
+        ShowPage(0);
     }
 
     void SetMode(bool full)
@@ -568,7 +611,8 @@ public class MainForm : Form
         bool idle = !busy;
         btnMeasure.Enabled = idle;
         btnClean.Enabled = idle;
-        foreach (TabButton t in tabs) t.Enabled = idle;
+        foreach (NavTile t in tiles) t.Enabled = idle;
+        foreach (NeonButton b in backButtons) b.Enabled = idle;
         bots.SetButtonsEnabled(idle);
         installRow.Action.Enabled = idle;
         cardNormal.Enabled = idle && fiveM.Found;
@@ -589,19 +633,22 @@ public class MainForm : Form
         bar.Value = permille;
     }
 
-    // 0 = Cleaner, 1 = Sonderfunktionen, 2 = Discord Bots
+    // 0 = Übersicht, 1 = Cleaner, 2 = Sonderfunktionen, 3 = Discord Bots
     void ShowPage(int index)
     {
         if (busy) return;
-        for (int i = 0; i < pages.Length; i++)
-        {
-            pages[i].Visible = i == index;
-            tabs[i].Selected = i == index;
-        }
+        for (int i = 0; i < pages.Length; i++) pages[i].Visible = i == index;
         bar.Value = 0;
-        if (index == 0) ShowSelectionTotal();
-        else SetStatus("", Theme.Text);
-        if (index == 1) { var ignored = extras.RefreshAsync(); }
+        bar.Visible = index == 1 || index == 2;   // Fortschritt gibt es nur beim Bereinigen und Installieren
+        SetStatus(index == 0 ? "Wähle einen Bereich aus." : "", Theme.Muted);
+
+        if (index == 1)
+        {
+            // Größen erst messen, wenn der Cleaner das erste Mal geöffnet wird
+            if (!measuredOnce) { measuredOnce = true; var ignored = MeasureAllAsync(); }
+            else ShowSelectionTotal();
+        }
+        if (index == 2) { var ignored = extras.RefreshAsync(); }
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)

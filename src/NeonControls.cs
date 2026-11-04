@@ -221,33 +221,37 @@ public class TargetRow : NeonControl
     }
 }
 
-// Reiter im Menü unter dem Banner. Aktiver Reiter: orange mit Neon-Unterstrich.
-public class TabButton : NeonControl
+// Große Kachel auf der Übersichtsseite: Symbol, Titel, Beschreibung, Pfeil.
+public class NavTile : NeonControl
 {
-    bool selected, hover;
+    bool hover, down;
+    string detail = "", glyph = "";
+    readonly Font titleFont = Theme.MakeFont("Segoe UI", 15f, FontStyle.Bold);
+    readonly Font detailFont = Theme.MakeFont("Segoe UI", 9.5f);
+    readonly Font glyphFont = Theme.MakeFont("Segoe MDL2 Assets", 22f);
+    readonly Font arrowFont = Theme.MakeFont("Segoe UI", 22f, FontStyle.Bold);
 
-    public TabButton()
-    {
-        Cursor = Cursors.Hand;
-        Font = Theme.MakeFont("Segoe UI", 10.5f, FontStyle.Bold);
-    }
+    public NavTile() { Cursor = Cursors.Hand; }
 
-    public bool Selected { get { return selected; } set { selected = value; Invalidate(); } }
+    public string Detail { get { return detail; } set { detail = value; Invalidate(); } }
+    public string Glyph { get { return glyph; } set { glyph = value; Invalidate(); } }
 
     protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
-    protected override void OnMouseLeave(EventArgs e) { hover = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnMouseLeave(EventArgs e) { hover = false; down = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnMouseDown(MouseEventArgs e) { down = true; Invalidate(); base.OnMouseDown(e); }
+    protected override void OnMouseUp(MouseEventArgs e) { down = false; Invalidate(); base.OnMouseUp(e); }
     protected override void OnEnabledChanged(EventArgs e) { Cursor = Enabled ? Cursors.Hand : Cursors.Default; Invalidate(); base.OnEnabledChanged(e); }
     protected override void OnTextChanged(EventArgs e) { Invalidate(); base.OnTextChanged(e); }
 
     public void PerformClick() { if (Enabled && Visible) OnClick(EventArgs.Empty); }
 
-    protected override AccessibleObject CreateAccessibilityInstance() { return new TabAccessible(this); }
+    protected override AccessibleObject CreateAccessibilityInstance() { return new TileAccessible(this); }
 
-    class TabAccessible : ControlAccessibleObject
+    class TileAccessible : ControlAccessibleObject
     {
-        readonly TabButton owner;
-        public TabAccessible(TabButton owner) : base(owner) { this.owner = owner; }
-        public override AccessibleRole Role { get { return AccessibleRole.PageTab; } }
+        readonly NavTile owner;
+        public TileAccessible(NavTile owner) : base(owner) { this.owner = owner; }
+        public override AccessibleRole Role { get { return AccessibleRole.PushButton; } }
         public override string DefaultAction { get { return "Öffnen"; } }
         public override void DoDefaultAction() { owner.PerformClick(); }
     }
@@ -256,18 +260,49 @@ public class TabButton : NeonControl
     {
         Graphics g = e.Graphics;
         Theme.Prepare(g);
-        Color color = !Enabled ? Theme.Line : selected ? Theme.Orange : hover ? Theme.Text : Theme.Muted;
-        TextRenderer.DrawText(g, Text, Font, new Rectangle(0, 0, Width, Height - Theme.S(4)), color,
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
-        if (selected || (hover && Enabled))
+        float glow = Theme.S(6);
+        var body = new RectangleF(glow, glow, Width - 2 * glow - 1, Height - 2 * glow - 1);
+        float radius = Theme.S(14);
+        bool active = Enabled && (hover || down);
+        Color accent = active ? Theme.Orange : Theme.Pink;
+
+        if (Enabled)
         {
-            int h = Theme.S(3);
-            var bar = new Rectangle(Theme.S(6), Height - h, Width - Theme.S(12), h);
-            if (selected)
-                using (var b = new LinearGradientBrush(bar, Theme.Pink, Theme.Orange, 0f)) g.FillRectangle(b, bar);
-            else
-                using (var b = new SolidBrush(Theme.Line)) g.FillRectangle(b, bar);
+            int rings = active ? 6 : 3;
+            for (int i = rings; i >= 1; i--)
+            {
+                var r = RectangleF.Inflate(body, i * glow / rings, i * glow / rings);
+                using (GraphicsPath p = Theme.Rounded(r, radius + i))
+                using (var pen = new Pen(Color.FromArgb(active ? 26 : 14, accent), 2f))
+                    g.DrawPath(pen, p);
+            }
         }
+
+        using (GraphicsPath p = Theme.Rounded(body, radius))
+        {
+            Color fill = !Enabled ? Theme.Track : down ? Color.FromArgb(60, Theme.Orange) : active ? Color.FromArgb(34, Theme.Orange) : Color.FromArgb(24, 12, 34);
+            using (var b = new SolidBrush(fill)) g.FillPath(b, p);
+            using (var pen = new Pen(Enabled ? accent : Theme.Line, Theme.S(2))) g.DrawPath(pen, p);
+        }
+
+        // Symbol im Kreis
+        float d = Theme.S(58);
+        var circle = new RectangleF(body.X + Theme.S(22), body.Y + (body.Height - d) / 2, d, d);
+        using (var b = new LinearGradientBrush(circle, Enabled ? Theme.Pink : Theme.Line, Enabled ? Theme.Orange : Theme.Line, 45f))
+            g.FillEllipse(b, circle);
+        TextRenderer.DrawText(g, glyph, glyphFont, Rectangle.Round(circle), Color.FromArgb(28, 10, 30),
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+
+        int left = (int)(circle.Right + Theme.S(22));
+        int right = (int)(body.Right - Theme.S(56));
+        int mid = (int)(body.Y + body.Height / 2);
+        TextRenderer.DrawText(g, Text, titleFont, new Rectangle(left, mid - Theme.S(34), right - left, Theme.S(34)),
+            Enabled ? (active ? Theme.Orange : Theme.Text) : Theme.Muted,
+            TextFormatFlags.Left | TextFormatFlags.Bottom | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
+        TextRenderer.DrawText(g, detail, detailFont, new Rectangle(left, mid + Theme.S(2), right - left, Theme.S(24)), Theme.Muted,
+            TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
+        TextRenderer.DrawText(g, "›", arrowFont, new Rectangle(right, (int)body.Y, (int)body.Right - right - Theme.S(14), (int)body.Height),
+            Enabled ? accent : Theme.Line, TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
     }
 }
 

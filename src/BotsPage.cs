@@ -36,19 +36,11 @@ public class BotsPage : Panel
 {
     readonly System.Collections.Generic.List<FeatureRow> rows = new System.Collections.Generic.List<FeatureRow>();
 
-    public BotsPage(int margin, int inner)
+    // top = wo der Inhalt beginnt (darüber liegt der Seitenkopf des Hauptfensters)
+    public BotsPage(int margin, int inner, int top)
     {
         BackColor = Theme.Bg;
-        int y = Theme.S(12);
-        Controls.Add(new Label
-        {
-            Text = "DISCORD BOTS",
-            ForeColor = Theme.Orange,
-            Font = Theme.MakeFont("Segoe UI", 9f, FontStyle.Bold),
-            AutoSize = false,
-            Bounds = new Rectangle(margin, y, inner, Theme.S(20)),
-        });
-        y += Theme.S(24);
+        int y = top;
 
         int rowHeight = Theme.S(84);
         foreach (Project p in Projects.All)
