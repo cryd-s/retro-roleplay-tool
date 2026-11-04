@@ -575,11 +575,12 @@ public class MainForm : Form
         uiTimer.Stop();
         bar.Value = 1000;
         SetBusy(false);
+        SetMode(false);          // Standard ist immer der normale Cache Clear
         await MeasureAllAsync();
 
         SetStatus("Fertig!  " + SizeFormat.Format(freed) + " freigegeben  ·  " +
                   deleted.ToString("N0") + " Dateien gelöscht" +
-                  (skipped > 0 ? "  ·  " + skipped.ToString("N0") + " übersprungen (in Benutzung)" : "") +
+                  (skipped > 0 ? "  ·  " + skipped.ToString("N0") + " übersprungen (in Benutzung oder geschützt)" : "") +
                   "\n" + iniText + (full ? "  ·  ⚠ FiveM-Name neu setzen!" : ""), Theme.Orange);
 
         if (errors.Count > 0)
@@ -650,6 +651,7 @@ public class MainForm : Form
 
         if (index == 1)
         {
+            SetMode(false);      // Standard ist immer der normale Cache Clear
             // Größen erst messen, wenn der Cleaner das erste Mal geöffnet wird
             if (!measuredOnce) { measuredOnce = true; var ignored = MeasureAllAsync(); }
             else ShowSelectionTotal();

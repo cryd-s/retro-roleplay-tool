@@ -121,8 +121,50 @@ static class Tests
 
     // ---------------------------------------------------------------- Cleaner
 
+    // Verweigert dem aktuellen Benutzer das Ändern von Attributen (wie bei fremden/geschützten Dateien in %TEMP%).
+    static void DenyWriteAttributes(string path, bool deny)
+    {
+        string sid = System.Security.Principal.WindowsIdentity.GetCurrent().User.Value;
+        string args = "\"" + path + "\" " + (deny ? "/deny *" + sid + ":(WA)" : "/remove:d *" + sid);
+        var psi = new ProcessStartInfo("icacls.exe", args)
+        {
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
+        };
+        using (Process p = Process.Start(psi))
+        {
+            p.StandardError.ReadToEndAsync();
+            p.StandardOutput.ReadToEnd();
+            p.WaitForExit();
+        }
+    }
+
     static void CleanerTests()
     {
+        Run("Leeren: Zugriff verweigert beim Attribut-Setzen bricht nicht ab", () =>
+        {
+            string dir = NewDir("denied");
+            string lockedDir = Path.Combine(dir, "a_geschuetzt");
+            string lockedFile = Path.Combine(dir, "b_schreibgeschuetzt.txt");
+            WriteFile(Path.Combine(lockedDir, "x.bin"), 10);
+            WriteFile(lockedFile, 10);
+            File.SetAttributes(lockedFile, FileAttributes.ReadOnly);
+            WriteFile(Path.Combine(dir, "c_normal.bin"), 10);
+            DenyWriteAttributes(lockedDir, true);
+            DenyWriteAttributes(lockedFile, true);
+            try
+            {
+                CleanResult r = FolderCleaner.CleanContents(dir, null);
+                True(!File.Exists(Path.Combine(dir, "c_normal.bin")), "Dateien danach werden trotzdem gelöscht");
+                True(r.FilesSkipped >= 1, "gesperrte Datei wird als übersprungen gezählt");
+            }
+            finally
+            {
+                DenyWriteAttributes(lockedDir, false);
+                DenyWriteAttributes(lockedFile, false);
+                if (File.Exists(lockedFile)) File.SetAttributes(lockedFile, FileAttributes.Normal);
+            }
+        });
+
         Run("Messen: summiert Dateien in Unterordnern", () =>
         {
             string dir = NewDir("m1");

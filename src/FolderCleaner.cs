@@ -48,6 +48,27 @@ public static class FolderCleaner
         return (info.Attributes & FileAttributes.ReparsePoint) != 0;
     }
 
+    static bool IsAccessProblem(Exception ex)
+    {
+        return ex is IOException || ex is UnauthorizedAccessException;
+    }
+
+    // Achtung .NET Framework: Das Setzen von Attributen meldet „Zugriff verweigert“ als ArgumentException
+    // (ohne Pfad im Text). Solche Einträge gehören jemand anderem/sind geschützt – überspringen statt abbrechen.
+    static bool TrySetAttributes(FileSystemInfo info, FileAttributes value)
+    {
+        try
+        {
+            info.Attributes = value;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (IsAccessProblem(ex) || ex is ArgumentException) return false;
+            throw;
+        }
+    }
+
     static long MeasureDir(DirectoryInfo dir)
     {
         long total = 0;
@@ -83,8 +104,8 @@ public static class FolderCleaner
             {
                 if (!IsLink(sub)) CleanDir(sub, result, onFileDeleted);
                 // Nicht rekursiv: entfernt nur leere Ordner bzw. bei Junctions nur die Verknüpfung.
-                try { sub.Attributes = FileAttributes.Directory; sub.Delete(false); }
-                catch (Exception ex) { if (!(ex is IOException || ex is UnauthorizedAccessException)) throw; }
+                try { TrySetAttributes(sub, FileAttributes.Directory); sub.Delete(false); }
+                catch (Exception ex) { if (!IsAccessProblem(ex)) throw; }
             }
             else
             {
@@ -92,7 +113,11 @@ public static class FolderCleaner
                 long size = IsLink(file) ? 0 : file.Length;
                 try
                 {
-                    if ((file.Attributes & FileAttributes.ReadOnly) != 0) file.Attributes = FileAttributes.Normal;
+                    if ((file.Attributes & FileAttributes.ReadOnly) != 0 && !TrySetAttributes(file, FileAttributes.Normal))
+                    {
+                        result.FilesSkipped++;
+                        continue;
+                    }
                     file.Delete();
                     result.FilesDeleted++;
                     result.BytesFreed += size;
@@ -100,7 +125,7 @@ public static class FolderCleaner
                 }
                 catch (Exception ex)
                 {
-                    if (!(ex is IOException || ex is UnauthorizedAccessException)) throw;
+                    if (!IsAccessProblem(ex)) throw;
                     result.FilesSkipped++;
                 }
             }
