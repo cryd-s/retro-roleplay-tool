@@ -107,7 +107,7 @@ public class MainForm : Form
         oy += Theme.S(28);
         var tileDefs = new[]
         {
-            new[] { "CLEANER", "FiveM-Cache leeren, %TEMP% aufräumen, Stable-Kanal setzen", "" },
+            new[] { "CACHE CLEANER", "FiveM-Cache leeren, %TEMP% aufräumen, Stable-Kanal setzen", "" },
             new[] { "GTA-EINSTELLUNGEN", "Texture Budget, FXAA, VSync, Dichte, Distanz · mit Zurück-Funktion", "" },
             new[] { "SONDERFUNKTIONEN", "TeamSpeak 3, SaltyChat und TS-Moved-nicht-Bugfix", "" },
             new[] { "DISCORD BOTS", "Retro RP und Retro Business", "" },
@@ -132,7 +132,7 @@ public class MainForm : Form
         // --- Cleaner
         mainPage = new Panel { BackColor = Theme.Bg, Location = new Point(0, pageTop), Visible = false };
         Controls.Add(mainPage);
-        AddPageHeader(mainPage, "CLEANER", m, inner);
+        AddPageHeader(mainPage, "CACHE CLEANER", m, inner);
         int y = contentTop;
 
         // --- Wo liegt FiveM?

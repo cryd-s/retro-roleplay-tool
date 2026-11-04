@@ -17,7 +17,7 @@ Alle Versionen (auch die exe einzeln) findest du unter [Releases](https://github
 
 ## Funktionen
 
-**Cleaner**
+**Cache Cleaner**
 - Findet die FiveM-Installation automatisch, auch bei eigenem Installationsort, sonst manuell auswählbar
 - **Normaler Cache Clear:** `cache`, `server-cache`, `server-cache-priv`, `logs`, `crashes`
 - **Gesamter Cache Clear:** zusätzlich `game-storage` und `nui-storage`.
