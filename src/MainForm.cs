@@ -108,7 +108,7 @@ public class MainForm : Form
         var tileDefs = new[]
         {
             new[] { "CLEANER", "FiveM-Cache leeren, %TEMP% aufräumen, Stable-Kanal setzen", "" },
-            new[] { "GTA-EINSTELLUNGEN", "Grafik-Profile und Extended Texture Budget für FiveM", "" },
+            new[] { "GTA-EINSTELLUNGEN", "Texture Budget, FXAA, VSync, Dichte, Distanz · mit Zurück-Funktion", "" },
             new[] { "SONDERFUNKTIONEN", "TeamSpeak 3, SaltyChat und TS-Moved-nicht-Bugfix", "" },
             new[] { "DISCORD BOTS", "Retro RP und Retro Business", "" },
         };

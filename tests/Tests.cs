@@ -564,6 +564,14 @@ static class Tests
         "    <ShadowQuality value=\"3\" />\r\n    <MotionBlurStrength value=\"0.500000\" />\r\n    <DoF value=\"true\" />\r\n" +
         "  </graphics>\r\n  <video>\r\n    <ScreenWidth value=\"5120\" />\r\n    <VSync value=\"1\" />\r\n  </video>\r\n</Settings>\r\n";
 
+    // Alle sieben wichtigen Werte stehen absichtlich falsch.
+    const string BadXml =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n\r\n<Settings>\r\n  <graphics>\r\n" +
+        "    <ShadowQuality value=\"3\" />\r\n    <LodScale value=\"1.000000\" />\r\n    <MSAA value=\"4\" />\r\n" +
+        "    <FXAA_Enabled value=\"false\" />\r\n    <CityDensity value=\"0.500000\" />\r\n" +
+        "    <PedVarietyMultiplier value=\"0.300000\" />\r\n    <VehicleVarietyMultiplier value=\"0.000000\" />\r\n" +
+        "  </graphics>\r\n  <video>\r\n    <ScreenWidth value=\"5120\" />\r\n    <VSync value=\"1\" />\r\n  </video>\r\n</Settings>\r\n";
+
     static void GtaSettingsTests()
     {
         Run("fivem.cfg: Wert wird gelesen", () =>
@@ -594,6 +602,7 @@ static class Tests
         {
             Equal("3", GtaGraphics.Get(Xml, "ShadowQuality"), "Schatten");
             Equal<string>(null, GtaGraphics.Get(Xml, "VSync"), "VSync liegt in <video>");
+            Equal("1", GtaGraphics.Get(Xml, "video", "VSync"), "VSync aus <video>");
         });
 
         Run("Grafik: Profil ändert nur Grafik, Bildschirm und Format bleiben", () =>
@@ -617,15 +626,98 @@ static class Tests
                 Equal(p.Name, GtaGraphics.Matching(GtaGraphics.Apply(Xml, p.Values)).Name, "Profil");
         });
 
-        Run("Texture Budget: Empfehlung nach Grafikspeicher", () =>
+        Run("Texture Budget: erlaubt sind 50–95 % des Reglers (0–19)", () =>
         {
-            long gib = 1024L * 1024 * 1024;
-            Equal(-1, TextureBudget.Recommended(0), "unbekannt");
-            Equal(0, TextureBudget.Recommended(4 * gib), "4 GB");
-            Equal(4, TextureBudget.Recommended(8 * gib), "8 GB");
-            Equal(12, TextureBudget.Recommended(12 * gib), "12 GB");
-            Equal(20, TextureBudget.Recommended(17171480576L), "RTX 4080 SUPER");
-            Equal(TextureBudget.Max, TextureBudget.Recommended(48 * gib), "Obergrenze");
+            Equal(19, TextureBudget.SliderMax, "Regler");
+            Equal(10, TextureBudget.MinValue, "50 %");
+            Equal(18, TextureBudget.MaxValue, "95 %");
+            Equal(95, TextureBudget.Percent(18), "Prozent");
+            Equal(10, TextureBudget.Clamp(0), "zu niedrig");
+            Equal(18, TextureBudget.Clamp(19), "zu hoch");
+            Equal(14, TextureBudget.Clamp(14), "passt");
+        });
+
+        Run("RP-Einstellungen: Prüfung zeigt, was nicht passt", () =>
+        {
+            List<SettingCheck> checks = RpSettings.Check(BadXml, "seta \"vid_budgetScale\" \"0\"\r\n");
+            Equal(7, checks.Count, "Anzahl");
+            foreach (SettingCheck c in checks) True(!c.Ok, c.Name + " dürfte nicht passen");
+        });
+
+        Run("RP-Einstellungen: Übernehmen setzt alles, Rest bleibt", () =>
+        {
+            string xml = BadXml, cfg = "seta \"vid_budgetScale\" \"19\"\r\nseta \"profile_vidVsync\" \"1\"\r\n";
+            RpSettings.Apply(ref xml, ref cfg);
+            foreach (SettingCheck c in RpSettings.Check(xml, cfg)) True(c.Ok, c.Name + " passt nicht: " + c.Current);
+            Equal("18", FiveMCfg.Get(cfg, "vid_budgetScale"), "Budget auf 95 %");
+            Equal("0", FiveMCfg.Get(cfg, "profile_vidVsync"), "VSync im Menü-Profil");
+            Equal("0.950000", GtaGraphics.Get(xml, "LodScale"), "Distanz auf 95 %");
+            Equal("3", GtaGraphics.Get(xml, "ShadowQuality"), "andere Grafik bleibt");
+            Equal("5120", GtaGraphics.Get(xml, "video", "ScreenWidth"), "Auflösung bleibt");
+        });
+
+        Run("RP-Einstellungen: passende Werte bleiben unverändert", () =>
+        {
+            string xml = GtaGraphics.Apply(BadXml, new Dictionary<string, string> { { "LodScale", "0.700000" } });
+            string cfg = "seta \"vid_budgetScale\" \"14\"\r\n";
+            RpSettings.Apply(ref xml, ref cfg);
+            Equal("0.700000", GtaGraphics.Get(xml, "LodScale"), "Distanz unter 95 % bleibt");
+            Equal("seta \"vid_budgetScale\" \"14\"\r\n", cfg, "Budget im Bereich bleibt, kein VSync-Eintrag erfunden");
+        });
+
+        Run("Sicherung: jeder Stand wird gespeichert, Schritt für Schritt zurück", () =>
+        {
+            string dir = NewDir("gtasnap");
+            string cfg = Path.Combine(dir, "fivem.cfg"), xml = Path.Combine(dir, "gta5_settings.xml");
+            string root = Path.Combine(dir, "sicherung");
+            File.WriteAllText(cfg, "cfg-1");
+            File.WriteAllText(xml, "xml-1");
+            GameConfigFiles.Snapshot(root, cfg, xml, Path.Combine(dir, "fehlt.txt"), null);
+            File.WriteAllText(cfg, "cfg-2");
+            GameConfigFiles.Snapshot(root, cfg, xml);
+            File.WriteAllText(cfg, "cfg-3");
+            File.WriteAllText(xml, "xml-3");
+            File.SetAttributes(xml, FileAttributes.ReadOnly);
+            Equal(2, GameConfigFiles.Snapshots(root).Count, "Stände");
+
+            Equal(2, GameConfigFiles.RestoreLatest(root), "Dateien zurückgespielt");
+            Equal("cfg-2", File.ReadAllText(cfg), "Stand 2");
+            Equal("xml-1", File.ReadAllText(xml), "xml Stand 2");
+            Equal(1, GameConfigFiles.Snapshots(root).Count, "noch ein Stand");
+            GameConfigFiles.RestoreLatest(root);
+            Equal("cfg-1", File.ReadAllText(cfg), "Stand 1");
+            Equal(0, GameConfigFiles.Snapshots(root).Count, "alle zurückgespielt");
+        });
+
+        Run("Sicherung: höchstens 20 Stände, der älteste bleibt erhalten", () =>
+        {
+            string dir = NewDir("gtasnapmax");
+            string cfg = Path.Combine(dir, "fivem.cfg"), root = Path.Combine(dir, "sicherung");
+            for (int i = 0; i < 23; i++)
+            {
+                File.WriteAllText(cfg, "v" + i);
+                GameConfigFiles.Snapshot(root, cfg);
+            }
+            List<string> all = GameConfigFiles.Snapshots(root);
+            Equal(20, all.Count, "Stände");
+            for (int i = 0; i < 20; i++) GameConfigFiles.RestoreLatest(root);
+            Equal("v0", File.ReadAllText(cfg), "Ursprungszustand bleibt erreichbar");
+        });
+
+        Run("Sicherung: Einzelsicherung aus v1.2.0 wird übernommen", () =>
+        {
+            string dir = NewDir("gtasnapold");
+            string cfg = Path.Combine(dir, "fivem.cfg"), root = Path.Combine(dir, "sicherung");
+            Directory.CreateDirectory(root);
+            File.WriteAllText(Path.Combine(root, "0_fivem.cfg"), "alt");
+            File.WriteAllText(Path.Combine(root, "dateien.txt"), "0_fivem.cfg|" + cfg + "\r\n");
+            File.WriteAllText(cfg, "neu");
+            File.WriteAllText(cfg, "neu");
+            GameConfigFiles.Snapshot(root, cfg);
+            Equal(2, GameConfigFiles.Snapshots(root).Count, "alter + neuer Stand");
+            GameConfigFiles.RestoreLatest(root);
+            GameConfigFiles.RestoreLatest(root);
+            Equal("alt", File.ReadAllText(cfg), "alter Stand zurück");
         });
 
         Run("Texture Budget: Speicher wie in FiveM berechnet", () =>
@@ -633,28 +725,6 @@ static class Tests
             Equal(3145728000L, TextureBudget.BudgetBytes(0), "Stufe 0");
             Equal(7864320000L, TextureBudget.BudgetBytes(18), "Stufe 18");
             Equal("7,3 GB", TextureBudget.FormatGb(TextureBudget.BudgetBytes(18)), "Anzeige");
-        });
-
-        Run("Sicherung: einmalig anlegen und zurückspielen", () =>
-        {
-            string dir = NewDir("gtacfg");
-            string cfg = Path.Combine(dir, "fivem.cfg"), xml = Path.Combine(dir, "gta5_settings.xml");
-            string backup = Path.Combine(dir, "sicherung");
-            File.WriteAllText(cfg, "original-cfg");
-            File.WriteAllText(xml, "original-xml");
-
-            GameConfigFiles.BackupOnce(backup, cfg, xml, Path.Combine(dir, "fehlt.txt"), null);
-            True(GameConfigFiles.HasBackup(backup), "Sicherung vorhanden");
-            File.WriteAllText(cfg, "geändert-1");
-            GameConfigFiles.BackupOnce(backup, cfg, xml);      // darf die erste Sicherung nicht überschreiben
-            File.WriteAllText(cfg, "geändert-2");
-            File.WriteAllText(xml, "geändert-2");
-            File.SetAttributes(xml, FileAttributes.ReadOnly);
-
-            Equal(2, GameConfigFiles.Restore(backup), "Dateien zurückgespielt");
-            Equal("original-cfg", File.ReadAllText(cfg), "cfg");
-            Equal("original-xml", File.ReadAllText(xml), "xml");
-            True(!GameConfigFiles.HasBackup(backup), "Sicherung danach gelöscht");
         });
 
         Run("Dateien: Kodierung (BOM) bleibt erhalten", () =>

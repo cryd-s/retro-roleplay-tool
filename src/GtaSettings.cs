@@ -4,7 +4,6 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
-using Microsoft.Win32;
 
 // Einstellungen, die FiveM wirklich verwendet. FiveM hat dafür eigene Dateien, getrennt vom normalen GTA V:
 //   %APPDATA%\CitizenFX\gta5_settings.xml  – Grafik (bei alten Installationen noch Dokumente\Rockstar Games\GTA V\settings.xml)
@@ -94,25 +93,32 @@ public static class GtaGraphics
 
     public static readonly Preset[] All = { Performance, Balanced, Quality };
 
-    static readonly Regex Block = new Regex("(<graphics>)(.*?)(</graphics>)", RegexOptions.Singleline);
-
     static Regex Element(string key)
     {
         return new Regex("(<" + Regex.Escape(key) + "\\s+value=\")([^\"]*)(\"\\s*/>)");
     }
 
-    public static string Get(string xml, string key)
+    static Regex Section(string section)
     {
-        Match block = Block.Match(xml ?? "");
+        return new Regex("(<" + section + ">)(.*?)(</" + section + ">)", RegexOptions.Singleline);
+    }
+
+    public static string Get(string xml, string key) { return Get(xml, "graphics", key); }
+
+    public static string Get(string xml, string section, string key)
+    {
+        Match block = Section(section).Match(xml ?? "");
         if (!block.Success) return null;
         Match m = Element(key).Match(block.Groups[2].Value);
         return m.Success ? m.Groups[2].Value : null;
     }
 
-    public static string Apply(string xml, IDictionary<string, string> values)
+    public static string Apply(string xml, IDictionary<string, string> values) { return Apply(xml, "graphics", values); }
+
+    public static string Apply(string xml, string section, IDictionary<string, string> values)
     {
-        Match block = Block.Match(xml ?? "");
-        if (!block.Success) throw new InvalidDataException("Die Grafik-Einstellungsdatei hat keinen <graphics>-Bereich.");
+        Match block = Section(section).Match(xml ?? "");
+        if (!block.Success) throw new InvalidDataException("Die Grafik-Einstellungsdatei hat keinen <" + section + ">-Bereich.");
 
         string body = block.Groups[2].Value;
         string nl = body.Contains("\r\n") ? "\r\n" : "\n";
@@ -130,7 +136,7 @@ public static class GtaGraphics
             }
             else
             {
-                // fehlender Eintrag: vor dem Einzug von </graphics> einfügen
+                // fehlender Eintrag: vor dem Einzug des schließenden Tags einfügen
                 string trimmed = body.TrimEnd(' ', '\t');
                 string tail = body.Substring(trimmed.Length);
                 if (!trimmed.EndsWith("\n")) trimmed += nl;
@@ -156,7 +162,7 @@ public static class GtaGraphics
         return null;
     }
 
-    static bool SameValue(string a, string b)
+    public static bool SameValue(string a, string b)
     {
         double x, y;
         if (double.TryParse(a, NumberStyles.Float, CultureInfo.InvariantCulture, out x) &&
@@ -166,182 +172,3 @@ public static class GtaGraphics
     }
 }
 
-// „Extended Texture Budget“ (FiveM-Grafikmenü) = vid_budgetScale in fivem.cfg.
-// FiveM rechnet: Texturspeicher = 3 GB × (Wert / 12 + 1), mit GB = 1000 × 1024 × 1024 Bytes.
-public static class TextureBudget
-{
-    public const string Convar = "vid_budgetScale";
-    public const int Max = 24;                       // ×3 – höher setzt das Tool nie
-    const double FiveMGB = 1000.0 * 1024 * 1024;
-
-    public static long BudgetBytes(int value)
-    {
-        return (long)(3 * FiveMGB * (value / 12.0 + 1));
-    }
-
-    // Empfehlung: Texturen dürfen höchstens etwa die Hälfte des Grafikspeichers belegen,
-    // der Rest bleibt für Spiel, Mods und Windows. -1 = Grafikspeicher unbekannt.
-    public static int Recommended(long vramBytes)
-    {
-        if (vramBytes <= 0) return -1;
-        double v = 12 * (vramBytes * 0.5 / (3 * FiveMGB) - 1);
-        if (v < 0) return 0;
-        return Math.Min(Max, (int)Math.Floor(v));
-    }
-
-    // Größte Grafikkarte im System (Name, Speicher in Bytes); Speicher 0 = unbekannt.
-    public static KeyValuePair<string, long> DetectGpu()
-    {
-        string bestName = null;
-        long best = 0;
-        try
-        {
-            using (RegistryKey cls = Registry.LocalMachine.OpenSubKey(
-                @"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"))
-            {
-                if (cls != null)
-                {
-                    foreach (string sub in cls.GetSubKeyNames())
-                    {
-                        try
-                        {
-                            using (RegistryKey k = cls.OpenSubKey(sub))
-                            {
-                                if (k == null) continue;
-                                long mem = ToLong(k.GetValue("HardwareInformation.qwMemorySize"));
-                                if (mem <= 0) mem = ToLong(k.GetValue("HardwareInformation.MemorySize"));
-                                if (mem > best)
-                                {
-                                    best = mem;
-                                    bestName = k.GetValue("DriverDesc") as string;
-                                }
-                            }
-                        }
-                        catch (Exception) { /* z. B. „Properties“ ohne Leserecht */ }
-                    }
-                }
-            }
-        }
-        catch (Exception) { }
-        return new KeyValuePair<string, long>(bestName, best);
-    }
-
-    static long ToLong(object o)
-    {
-        if (o is long) return (long)o;
-        if (o is int) return (uint)(int)o;
-        var bytes = o as byte[];
-        if (bytes != null && bytes.Length >= 8) return BitConverter.ToInt64(bytes, 0);
-        if (bytes != null && bytes.Length >= 4) return BitConverter.ToUInt32(bytes, 0);
-        return 0;
-    }
-
-    public static string FormatGb(long bytes)
-    {
-        return (bytes / (1024.0 * 1024 * 1024)).ToString("0.0", CultureInfo.GetCultureInfo("de-DE")) + " GB";
-    }
-}
-
-// Dateien lesen/schreiben (Kodierung und BOM bleiben erhalten) und eine einmalige Sicherung anlegen.
-public static class GameConfigFiles
-{
-    public static string CitizenFxDir
-    {
-        get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CitizenFX"); }
-    }
-
-    public static string CfgPath { get { return Path.Combine(CitizenFxDir, "fivem.cfg"); } }
-
-    // Die Grafikdatei, die FiveM benutzt; null = noch nicht vorhanden (FiveM noch nie gestartet)
-    public static string GraphicsPath
-    {
-        get
-        {
-            string own = Path.Combine(CitizenFxDir, "gta5_settings.xml");
-            if (File.Exists(own)) return own;
-            string legacy = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-                                         "Rockstar Games", "GTA V", "settings.xml");
-            return File.Exists(legacy) ? legacy : null;
-        }
-    }
-
-    public static string DefaultBackupDir
-    {
-        get
-        {
-            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                                "RetroRoleplayTool", "Sicherung GTA-Einstellungen");
-        }
-    }
-
-    public static string ReadText(string path, out Encoding encoding)
-    {
-        byte[] bytes = File.ReadAllBytes(path);
-        bool bom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
-        encoding = new UTF8Encoding(bom);
-        return new UTF8Encoding(false).GetString(bytes, bom ? 3 : 0, bytes.Length - (bom ? 3 : 0));
-    }
-
-    public static void WriteText(string path, string text, Encoding encoding)
-    {
-        string tmp = path + ".rrtool.tmp";
-        File.WriteAllText(tmp, text, encoding);
-        FileAttributes attrs = File.GetAttributes(path);
-        if ((attrs & FileAttributes.ReadOnly) != 0) File.SetAttributes(path, attrs & ~FileAttributes.ReadOnly);
-        File.Copy(tmp, path, true);
-        File.Delete(tmp);
-    }
-
-    const string IndexName = "dateien.txt";
-
-    public static bool HasBackup(string backupDir)
-    {
-        return File.Exists(Path.Combine(backupDir, IndexName));
-    }
-
-    public static DateTime BackupTime(string backupDir)
-    {
-        return File.GetLastWriteTime(Path.Combine(backupDir, IndexName));
-    }
-
-    // Sichert die Dateien nur, wenn es noch keine Sicherung gibt – so bleibt der Zustand vor der ersten Änderung erhalten.
-    public static void BackupOnce(string backupDir, params string[] files)
-    {
-        if (HasBackup(backupDir)) return;
-        Directory.CreateDirectory(backupDir);
-        var index = new StringBuilder();
-        int n = 0;
-        foreach (string f in files)
-        {
-            if (f == null || !File.Exists(f)) continue;
-            string name = n++ + "_" + Path.GetFileName(f);
-            File.Copy(f, Path.Combine(backupDir, name), true);
-            index.Append(name).Append('|').Append(f).Append("\r\n");
-        }
-        File.WriteAllText(Path.Combine(backupDir, IndexName), index.ToString(), new UTF8Encoding(false));
-    }
-
-    // Spielt die Sicherung zurück und löscht sie danach.
-    public static int Restore(string backupDir)
-    {
-        string indexPath = Path.Combine(backupDir, IndexName);
-        int restored = 0;
-        foreach (string line in File.ReadAllLines(indexPath, Encoding.UTF8))
-        {
-            int bar = line.IndexOf('|');
-            if (bar <= 0) continue;
-            string saved = Path.Combine(backupDir, line.Substring(0, bar));
-            string target = line.Substring(bar + 1);
-            if (!File.Exists(saved)) continue;
-            if (File.Exists(target))
-            {
-                FileAttributes a = File.GetAttributes(target);
-                if ((a & FileAttributes.ReadOnly) != 0) File.SetAttributes(target, a & ~FileAttributes.ReadOnly);
-            }
-            File.Copy(saved, target, true);
-            restored++;
-        }
-        Directory.Delete(backupDir, true);
-        return restored;
-    }
-}

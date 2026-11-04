@@ -6,17 +6,62 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-// Unterseite „GTA-Einstellungen“: ändert nur die Dateien, die FiveM selbst benutzt (siehe GtaSettings.cs).
+// Liste „Einstellung · aktuell · Ziel · ✔/✖“
+public class CheckListView : NeonControl
+{
+    List<SettingCheck> items = new List<SettingCheck>();
+    readonly Font nameFont = Theme.MakeFont("Segoe UI Semibold", 10f);
+    readonly Font valueFont = Theme.MakeFont("Segoe UI", 9.5f);
+    readonly Font markFont = Theme.MakeFont("Segoe UI Semibold", 11f);
+
+    public static int RowHeight { get { return Theme.S(27); } }
+
+    public List<SettingCheck> Items
+    {
+        get { return items; }
+        set { items = value ?? new List<SettingCheck>(); Invalidate(); }
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        Graphics g = e.Graphics;
+        Theme.Prepare(g);
+        int h = RowHeight;
+        int colCurrent = (int)(Width * 0.42), colTarget = (int)(Width * 0.70), colMark = Width - Theme.S(30);
+        const TextFormatFlags flags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
+        using (var line = new Pen(Theme.Line))
+        {
+            for (int i = 0; i < items.Count; i++)
+            {
+                SettingCheck c = items[i];
+                int y = i * h;
+                TextRenderer.DrawText(g, c.Name, nameFont, new Rectangle(0, y, colCurrent - Theme.S(8), h), Theme.Text, flags);
+                TextRenderer.DrawText(g, c.Current, valueFont, new Rectangle(colCurrent, y, colTarget - colCurrent - Theme.S(8), h),
+                    c.Ok ? Theme.Good : Theme.Pink, flags);
+                TextRenderer.DrawText(g, "Ziel: " + c.Target, valueFont, new Rectangle(colTarget, y, colMark - colTarget - Theme.S(6), h),
+                    Theme.Muted, flags);
+                TextRenderer.DrawText(g, c.Ok ? "✔" : "✖", markFont, new Rectangle(colMark, y, Width - colMark, h),
+                    c.Ok ? Theme.Good : Theme.Pink, TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+                g.DrawLine(line, 0, y + h - 1, Width, y + h - 1);
+            }
+        }
+    }
+}
+
+// Unterseite „GTA-Einstellungen“: ändert nur die Dateien, die FiveM selbst benutzt (siehe GtaSettings.cs, RpSettings.cs).
 public class GtaSettingsPage : Panel
 {
     readonly MainForm host;
-    readonly Label fileInfo;
+    readonly Label fileInfo, summary;
+    readonly CheckListView checkList;
+    readonly NeonButton applyButton;
     readonly List<ModeCard> cards = new List<ModeCard>();
-    readonly FeatureRow budgetRow, backupRow;
+    readonly FeatureRow backupRow;
 
     string graphicsPath;
-    int currentBudget = -1, recommendedBudget = -1;
-    bool hasBackup, refreshing;
+    int notOk;
+    int snapshotCount;
+    bool refreshing;
 
     public GtaSettingsPage(MainForm host, int margin, int inner, int top)
     {
@@ -24,22 +69,42 @@ public class GtaSettingsPage : Panel
         BackColor = Theme.Bg;
         int y = top;
 
-        Controls.Add(Heading("GRAFIK-PROFIL", margin, y, inner));
+        // --- Die wichtigsten Einstellungen
+        Controls.Add(Heading("WICHTIGSTE FIVEM-EINSTELLUNGEN", margin, y, inner));
+        y += Theme.S(20);
+        fileInfo = SmallLabel(margin, y, inner);
+        Controls.Add(fileInfo);
         y += Theme.S(22);
-        fileInfo = new Label
+        checkList = new CheckListView { Bounds = new Rectangle(margin, y, inner, 7 * CheckListView.RowHeight) };
+        Controls.Add(checkList);
+        y += checkList.Height + Theme.S(10);
+
+        int btnH = Theme.S(50), btnW = Theme.S(260);
+        summary = new Label
         {
             ForeColor = Theme.Muted,
-            Font = Theme.MakeFont("Segoe UI", 8.25f),
+            Font = Theme.MakeFont("Segoe UI Semibold", 10f),
+            TextAlign = ContentAlignment.MiddleLeft,
             AutoSize = false,
-            AutoEllipsis = true,
-            Bounds = new Rectangle(margin, y, inner, Theme.S(18)),
+            Bounds = new Rectangle(margin, y, inner - btnW - Theme.S(10), btnH),
         };
-        Controls.Add(fileInfo);
-        y += Theme.S(24);
+        Controls.Add(summary);
+        applyButton = new NeonButton
+        {
+            Text = "ALLE ÜBERNEHMEN",
+            Primary = true,
+            Bounds = new Rectangle(margin + inner - btnW + Theme.S(6), y, btnW, btnH),
+        };
+        applyButton.Click += async delegate { await Guard(ApplyRpSettingsAsync); };
+        Controls.Add(applyButton);
+        y += btnH + Theme.S(14);
 
+        // --- Grafik-Profile (optional)
+        Controls.Add(Heading("GRAFIK-PROFIL  (OPTIONAL)", margin, y, inner));
+        y += Theme.S(24);
         int glow = Theme.S(5), gap = Theme.S(12);
         int cardW = (inner - 2 * gap) / 3;
-        int cardH = Theme.S(104);
+        int cardH = Theme.S(96);
         for (int i = 0; i < GtaGraphics.All.Length; i++)
         {
             GtaGraphics.Preset preset = GtaGraphics.All[i];
@@ -53,33 +118,20 @@ public class GtaSettingsPage : Panel
             cards.Add(card);
             Controls.Add(card);
         }
-        y += cardH + Theme.S(14);
+        y += cardH + Theme.S(10);
 
-        Controls.Add(Heading("TEXTUREN UND SICHERUNG", margin, y, inner));
-        y += Theme.S(20);
-        int rowHeight = Theme.S(84), buttonWidth = Theme.S(230);
-        budgetRow = new FeatureRow(buttonWidth)
+        // --- Gespeicherte Stände
+        backupRow = new FeatureRow(Theme.S(230))
         {
-            Title = "Extended Texture Budget",
-            Detail = "wird geprüft …",
-            Bounds = new Rectangle(margin, y, inner, rowHeight),
+            Title = "Gespeicherte Stände",
+            Detail = "Vor jeder Änderung wird der aktuelle Stand gespeichert.",
+            Bounds = new Rectangle(margin, y, inner, Theme.S(84)),
         };
-        budgetRow.Action.Text = "EMPFOHLEN SETZEN";
-        budgetRow.Action.Click += async delegate { await Guard(SetRecommendedBudgetAsync); };
-        Controls.Add(budgetRow);
-        y += rowHeight;
-
-        backupRow = new FeatureRow(buttonWidth)
-        {
-            Title = "Sicherung",
-            Detail = "Vor der ersten Änderung sichert das Tool die Original-Einstellungen.",
-            Bounds = new Rectangle(margin, y, inner, rowHeight),
-        };
-        backupRow.Action.Text = "WIEDERHERSTELLEN";
+        backupRow.Action.Text = "EINEN SCHRITT ZURÜCK";
         backupRow.Action.Primary = false;
         backupRow.Action.Click += async delegate { await Guard(RestoreAsync); };
         Controls.Add(backupRow);
-        y += rowHeight;
+        y += backupRow.Height;
 
         ContentHeight = y + Theme.S(12);
     }
@@ -98,12 +150,24 @@ public class GtaSettingsPage : Panel
         };
     }
 
+    static Label SmallLabel(int x, int y, int w)
+    {
+        return new Label
+        {
+            ForeColor = Theme.Muted,
+            Font = Theme.MakeFont("Segoe UI", 8.25f),
+            AutoSize = false,
+            AutoEllipsis = true,
+            Bounds = new Rectangle(x, y, w, Theme.S(18)),
+        };
+    }
+
     public void SetButtonsEnabled(bool enabled)
     {
-        bool on = enabled && !refreshing;
-        foreach (ModeCard c in cards) c.Enabled = on && graphicsPath != null;
-        budgetRow.Action.Enabled = on && recommendedBudget >= 0;
-        backupRow.Action.Enabled = on && hasBackup;
+        bool on = enabled && !refreshing && graphicsPath != null;
+        foreach (ModeCard c in cards) c.Enabled = on;
+        applyButton.Enabled = on && notOk > 0;
+        backupRow.Action.Enabled = enabled && !refreshing && snapshotCount > 0;
     }
 
     // ------------------------------------------------------------ Status
@@ -113,76 +177,56 @@ public class GtaSettingsPage : Panel
         if (refreshing) return;
         refreshing = true;
         SetButtonsEnabled(false);
-
-        graphicsPath = GameConfigFiles.GraphicsPath;
-        GtaGraphics.Preset active = null;
-        if (graphicsPath == null)
-        {
-            fileInfo.Text = "Keine FiveM-Grafikeinstellungen gefunden – FiveM einmal starten und wieder schließen.";
-        }
-        else
-        {
-            try
-            {
-                Encoding enc;
-                active = GtaGraphics.Matching(GameConfigFiles.ReadText(graphicsPath, out enc));
-                fileInfo.Text = "Aktuell: " + (active != null ? active.Name : "eigene Einstellungen") +
-                                "   ·   Auflösung und Bildschirm bleiben unverändert   ·   " + graphicsPath;
-            }
-            catch (Exception ex)
-            {
-                fileInfo.Text = "Grafikeinstellungen nicht lesbar: " + ex.Message;
-                graphicsPath = null;
-            }
-        }
-        foreach (ModeCard c in cards) c.Selected = active != null && c.Title == active.Name;
-
-        // Texture Budget
-        currentBudget = 0;
         try
         {
-            Encoding enc;
-            if (File.Exists(GameConfigFiles.CfgPath))
+            string xml = null, cfg = "";
+            graphicsPath = GameConfigFiles.GraphicsPath;
+            await Task.Run(() =>
             {
-                int v;
-                if (int.TryParse(FiveMCfg.Get(GameConfigFiles.ReadText(GameConfigFiles.CfgPath, out enc), TextureBudget.Convar), out v))
-                    currentBudget = v;
+                Encoding enc;
+                if (graphicsPath != null) xml = GameConfigFiles.ReadText(graphicsPath, out enc);
+                if (File.Exists(GameConfigFiles.CfgPath)) cfg = GameConfigFiles.ReadText(GameConfigFiles.CfgPath, out enc);
+            });
+
+            if (xml == null)
+            {
+                fileInfo.Text = "Keine FiveM-Einstellungen gefunden – FiveM einmal starten und wieder schließen.";
+                checkList.Items = null;
+                summary.Text = "";
+                notOk = 0;
             }
-        }
-        catch (Exception) { }
-        KeyValuePair<string, long> gpu = await Task.Run(() => TextureBudget.DetectGpu());
-        recommendedBudget = TextureBudget.Recommended(gpu.Value);
-        budgetRow.Detail = gpu.Value > 0
-            ? "Grafikkarte: " + (gpu.Key ?? "unbekannt") + "  ·  " + TextureBudget.FormatGb(gpu.Value) + " Grafikspeicher"
-            : "Grafikspeicher konnte nicht ermittelt werden – bitte im FiveM-Grafikmenü einstellen.";
-        string now = "aktuell Stufe " + currentBudget + " (" + TextureBudget.FormatGb(TextureBudget.BudgetBytes(currentBudget)) + ")";
-        if (recommendedBudget < 0)
-        {
-            budgetRow.Value = now;
-            budgetRow.ValueColor = Theme.Muted;
-        }
-        else if (currentBudget == recommendedBudget)
-        {
-            budgetRow.Value = now + "  ✔  passt zur Grafikkarte";
-            budgetRow.ValueColor = Theme.Good;
-        }
-        else
-        {
-            budgetRow.Value = now + "  ·  empfohlen Stufe " + recommendedBudget +
-                              " (" + TextureBudget.FormatGb(TextureBudget.BudgetBytes(recommendedBudget)) + ")";
-            budgetRow.ValueColor = currentBudget > recommendedBudget ? Theme.Pink : Theme.Orange;
-        }
-        budgetRow.Action.Primary = recommendedBudget >= 0 && currentBudget != recommendedBudget;
+            else
+            {
+                fileInfo.Text = graphicsPath + "   ·   " + GameConfigFiles.CfgPath;
+                List<SettingCheck> checks = RpSettings.Check(xml, cfg);
+                checkList.Items = checks;
+                notOk = 0;
+                foreach (SettingCheck c in checks) if (!c.Ok) notOk++;
+                summary.Text = notOk == 0 ? "✔  Alles passt." : notOk + " von " + checks.Count + " Einstellungen passen noch nicht.";
+                summary.ForeColor = notOk == 0 ? Theme.Good : Theme.Pink;
+            }
 
-        // Sicherung
-        hasBackup = GameConfigFiles.HasBackup(GameConfigFiles.DefaultBackupDir);
-        backupRow.Value = hasBackup
-            ? "Sicherung vom " + GameConfigFiles.BackupTime(GameConfigFiles.DefaultBackupDir).ToString("dd.MM.yyyy, HH:mm") + " Uhr"
-            : "noch nichts geändert – keine Sicherung nötig";
-        backupRow.ValueColor = hasBackup ? Theme.Orange : Theme.Muted;
+            GtaGraphics.Preset active = xml == null ? null : GtaGraphics.Matching(xml);
+            foreach (ModeCard c in cards) c.Selected = active != null && c.Title == active.Name;
 
-        refreshing = false;
-        SetButtonsEnabled(!host.Busy);
+            List<string> snaps = GameConfigFiles.Snapshots(GameConfigFiles.DefaultBackupDir);
+            snapshotCount = snaps.Count;
+            backupRow.Value = snapshotCount == 0
+                ? "noch nichts geändert"
+                : snapshotCount + (snapshotCount == 1 ? " Stand" : " Stände") + " gespeichert  ·  letzter vom " +
+                  GameConfigFiles.SnapshotTime(snaps[snapshotCount - 1]).ToString("dd.MM.yyyy, HH:mm") + " Uhr";
+            backupRow.ValueColor = snapshotCount > 0 ? Theme.Orange : Theme.Muted;
+        }
+        catch (Exception ex)
+        {
+            fileInfo.Text = "Einstellungen nicht lesbar: " + ex.Message;
+            graphicsPath = null;
+        }
+        finally
+        {
+            refreshing = false;
+            SetButtonsEnabled(!host.Busy);
+        }
     }
 
     // ------------------------------------------------------------ Aktionen
@@ -225,17 +269,49 @@ public class GtaSettingsPage : Panel
         return true;
     }
 
-    static void Backup()
+    static void SaveCurrentState()
     {
-        GameConfigFiles.BackupOnce(GameConfigFiles.DefaultBackupDir, GameConfigFiles.GraphicsPath, GameConfigFiles.CfgPath);
+        GameConfigFiles.Snapshot(GameConfigFiles.DefaultBackupDir, GameConfigFiles.GraphicsPath, GameConfigFiles.CfgPath);
+    }
+
+    async Task ApplyRpSettingsAsync()
+    {
+        if (graphicsPath == null || notOk == 0) return;
+        var lines = new StringBuilder();
+        foreach (SettingCheck c in checkList.Items)
+            if (!c.Ok) lines.Append("•  ").Append(c.Name).Append(":  ").Append(c.Current).Append("  →  ").Append(c.Target).Append('\n');
+        if (!Confirm("Folgende Einstellungen werden für FiveM angepasst:\n\n" + lines +
+                     "\nAlles andere bleibt unverändert. Der aktuelle Stand wird vorher gespeichert, " +
+                     "du kannst also jederzeit zurück.", "Einstellungen übernehmen"))
+            return;
+        if (!await EnsureFiveMClosedAsync()) return;
+
+        host.SetBusy(true);
+        string xmlPath = graphicsPath, cfgPath = GameConfigFiles.CfgPath;
+        await Task.Run(() =>
+        {
+            SaveCurrentState();
+            Encoding xmlEnc, cfgEnc = new UTF8Encoding(false);
+            string xml = GameConfigFiles.ReadText(xmlPath, out xmlEnc);
+            string cfg = File.Exists(cfgPath) ? GameConfigFiles.ReadText(cfgPath, out cfgEnc) : "";
+            string oldCfg = cfg;
+            RpSettings.Apply(ref xml, ref cfg);
+            GameConfigFiles.WriteText(xmlPath, xml, xmlEnc);
+            if (cfg != oldCfg)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(cfgPath));
+                GameConfigFiles.WriteText(cfgPath, cfg, cfgEnc);
+            }
+        });
+        host.SetStatus("Fertig!  Die Einstellungen sind übernommen – sie gelten ab dem nächsten FiveM-Start.", Theme.Orange);
     }
 
     async Task ApplyPresetAsync(GtaGraphics.Preset preset)
     {
         if (graphicsPath == null) return;
         if (!Confirm("Grafik-Profil „" + preset.Name + "“ für FiveM setzen?\n\n" + preset.Detail + "\n\n" +
-                     "Auflösung, Bildschirm und Texture Budget bleiben unverändert.\n" +
-                     "Die Original-Einstellungen werden vorher gesichert.", "Grafik-Profil"))
+                     "Auflösung, Bildschirm und die wichtigsten Einstellungen oben bleiben unverändert.\n" +
+                     "Der aktuelle Stand wird vorher gespeichert.", "Grafik-Profil"))
             return;
         if (!await EnsureFiveMClosedAsync()) return;
 
@@ -243,7 +319,7 @@ public class GtaSettingsPage : Panel
         string path = graphicsPath;
         await Task.Run(() =>
         {
-            Backup();
+            SaveCurrentState();
             Encoding enc;
             string xml = GameConfigFiles.ReadText(path, out enc);
             GameConfigFiles.WriteText(path, GtaGraphics.Apply(xml, preset.Values), enc);
@@ -251,50 +327,19 @@ public class GtaSettingsPage : Panel
         host.SetStatus("Fertig!  Grafik-Profil „" + preset.Name + "“ ist gesetzt – gilt ab dem nächsten FiveM-Start.", Theme.Orange);
     }
 
-    async Task SetRecommendedBudgetAsync()
-    {
-        int value = recommendedBudget;
-        if (value < 0) return;
-        if (!Confirm("Extended Texture Budget auf Stufe " + value + " setzen?\n\n" +
-                     "Damit darf FiveM bis zu " + TextureBudget.FormatGb(TextureBudget.BudgetBytes(value)) +
-                     " für Texturen nutzen – etwa die Hälfte deines Grafikspeichers.\n" +
-                     "Das hilft gegen fehlende oder matschige Texturen, ohne die Grafikkarte zu überlasten.\n\n" +
-                     "Die Original-Einstellungen werden vorher gesichert.", "Extended Texture Budget"))
-            return;
-        if (!await EnsureFiveMClosedAsync()) return;
-
-        host.SetBusy(true);
-        string path = GameConfigFiles.CfgPath;
-        await Task.Run(() =>
-        {
-            Backup();
-            if (File.Exists(path))
-            {
-                Encoding enc;
-                string cfg = GameConfigFiles.ReadText(path, out enc);
-                GameConfigFiles.WriteText(path, FiveMCfg.Set(cfg, TextureBudget.Convar, value.ToString()), enc);
-            }
-            else
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(path));
-                File.WriteAllText(path, FiveMCfg.Set("", TextureBudget.Convar, value.ToString()), new UTF8Encoding(false));
-            }
-        });
-        host.SetStatus("Fertig!  Extended Texture Budget steht auf Stufe " + value + " – gilt ab dem nächsten FiveM-Start.", Theme.Orange);
-    }
-
     async Task RestoreAsync()
     {
-        if (!hasBackup) return;
-        if (!Confirm("Die gesicherten Original-Einstellungen vom " +
-                     GameConfigFiles.BackupTime(GameConfigFiles.DefaultBackupDir).ToString("dd.MM.yyyy, HH:mm") +
-                     " Uhr zurückspielen?\n\nAlle Änderungen, die seitdem an den FiveM-Einstellungen gemacht wurden " +
-                     "(auch im Spiel), gehen dabei verloren.", "Wiederherstellen"))
+        List<string> snaps = GameConfigFiles.Snapshots(GameConfigFiles.DefaultBackupDir);
+        if (snaps.Count == 0) return;
+        string when = GameConfigFiles.SnapshotTime(snaps[snaps.Count - 1]).ToString("dd.MM.yyyy, HH:mm");
+        if (!Confirm("Einen Schritt zurück: Die Einstellungen werden auf den Stand vom " + when + " Uhr " +
+                     "(vor der letzten Änderung durch das Tool) zurückgesetzt.\n\n" +
+                     "Was seitdem geändert wurde – auch im Spiel – geht dabei verloren.", "Einen Schritt zurück"))
             return;
         if (!await EnsureFiveMClosedAsync()) return;
 
         host.SetBusy(true);
-        await Task.Run(() => GameConfigFiles.Restore(GameConfigFiles.DefaultBackupDir));
-        host.SetStatus("Fertig!  Die Original-Einstellungen sind wiederhergestellt.", Theme.Orange);
+        await Task.Run(() => GameConfigFiles.RestoreLatest(GameConfigFiles.DefaultBackupDir));
+        host.SetStatus("Fertig!  Die Einstellungen stehen wieder auf dem Stand vom " + when + " Uhr.", Theme.Orange);
     }
 }
