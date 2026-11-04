@@ -34,24 +34,6 @@ Alle Versionen findest du unter [Releases](https://github.com/cryd-s/retro-rolep
 - [Retro RP](https://retrorp.de) – Bot für Familien-Discord
 - [Retro Business](https://retrobusiness.de) – Bot für Business
 
-## Selbst bauen
-
-Es wird nichts extra benötigt – der C#-Compiler von Windows (.NET Framework 4.8) reicht.
-
-```
-build.cmd
-```
-
-Führt zuerst die Tests aus und erzeugt dann `RetroRoleplayTool.exe`.
-
-## Neue Version veröffentlichen
-
-```
-powershell -ExecutionPolicy Bypass -File tools\release.ps1 -Version 1.1.0 -Notes "Was ist neu"
-```
-
-Setzt die Versionsnummer, baut und testet, committet, pusht und legt das GitHub-Release mit der exe an.
-
 ---
 
 by RR | Manu
