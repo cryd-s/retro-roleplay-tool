@@ -7,10 +7,10 @@ installiert TeamSpeak 3 und SaltyChat mit einem Klick.
 
 ## ⬇️ Download
 
-**[RetroRoleplayTool.exe herunterladen (aktuelle Version)](https://github.com/cryd-s/retro-roleplay-tool/releases/latest/download/RetroRoleplayTool.exe)**
+**[RetroRoleplayTool.zip herunterladen (aktuelle Version)](https://github.com/cryd-s/retro-roleplay-tool/releases/latest/download/RetroRoleplayTool.zip)**
 
-Einfach herunterladen und starten. Keine Installation nötig, läuft auf Windows 10 und Windows 11.
-Alle Versionen findest du unter [Releases](https://github.com/cryd-s/retro-roleplay-tool/releases).
+ZIP entpacken und `RetroRoleplayTool.exe` starten. Keine Installation nötig, läuft auf Windows 10 und Windows 11.
+Alle Versionen (auch die exe einzeln) findest du unter [Releases](https://github.com/cryd-s/retro-roleplay-tool/releases).
 
 > Windows zeigt beim ersten Start eventuell „Der Computer wurde durch Windows geschützt“ an, weil das Programm
 > nicht digital signiert ist. Dann auf **Weitere Informationen → Trotzdem ausführen** klicken.

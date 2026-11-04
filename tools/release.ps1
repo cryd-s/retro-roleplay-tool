@@ -70,15 +70,24 @@ $headers = @{ Authorization = "token $token"; Accept = 'application/vnd.github+j
 $body = @"
 $Notes
 
-**Download:** RetroRoleplayTool.exe unten bei *Assets* - einfach herunterladen und starten (Windows 10/11, keine Installation nötig).
+**Download:** RetroRoleplayTool.zip unten bei *Assets* herunterladen, entpacken und RetroRoleplayTool.exe starten (Windows 10/11, keine Installation nötig).
+Die exe gibt es dort auch einzeln.
 "@
 $release = Invoke-RestMethod -Method Post -Uri "https://api.github.com/repos/$repo/releases" -Headers $headers `
     -ContentType 'application/json; charset=utf-8' `
     -Body ([Text.Encoding]::UTF8.GetBytes((@{ tag_name = $tag; name = "Retro Roleplay Tool $tag"; body = $body.Trim() } | ConvertTo-Json)))
 
+# ZIP (exe + LIESMICH.txt): Browser warnen bei ZIP-Downloads seltener als bei einer einzelnen exe.
 $exe = Join-Path $root 'bin\RetroRoleplayTool.exe'
-Invoke-RestMethod -Method Post -Headers $headers -ContentType 'application/octet-stream' -InFile $exe `
-    -Uri "https://uploads.github.com/repos/$repo/releases/$($release.id)/assets?name=RetroRoleplayTool.exe" | Out-Null
+$zip = Join-Path $root 'bin\RetroRoleplayTool.zip'
+if (Test-Path $zip) { Remove-Item $zip }
+Compress-Archive -Path $exe, (Join-Path $root 'assets\LIESMICH.txt') -DestinationPath $zip
+
+foreach ($asset in @(@{ File = $zip; Name = 'RetroRoleplayTool.zip'; Type = 'application/zip' },
+                     @{ File = $exe; Name = 'RetroRoleplayTool.exe'; Type = 'application/octet-stream' })) {
+    Invoke-RestMethod -Method Post -Headers $headers -ContentType $asset.Type -InFile $asset.File `
+        -Uri "https://uploads.github.com/repos/$repo/releases/$($release.id)/assets?name=$($asset.Name)" | Out-Null
+}
 
 Write-Host ""
 Write-Host "Veröffentlicht: $($release.html_url)"
