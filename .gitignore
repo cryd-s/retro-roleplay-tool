@@ -1,0 +1,5 @@
+# Build-Ausgaben (die fertige exe gibt es unter Releases)
+bin/
+/RetroRoleplayTool.exe
+/RetroRoleplayTool.old.exe
+*.part
