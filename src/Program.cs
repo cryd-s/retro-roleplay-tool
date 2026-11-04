@@ -11,7 +11,7 @@ static class Program
     [STAThread]
     static int Main(string[] args)
     {
-        // Admin-Hilfsmodus für den TS-Moved-Bugfix: "--hosts-fix on|off" (wird mit Adminrechten gestartet)
+        // Admin-Hilfsmodus für den TS-Moved-nicht-Bugfix: "--hosts-fix on|off" (wird mit Adminrechten gestartet)
         if (args.Length == 2 && args[0] == "--hosts-fix")
         {
             try

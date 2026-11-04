@@ -383,7 +383,7 @@ static class Tests
         });
     }
 
-    // ---------------------------------------------------------------- hosts (TS-Moved-Bugfix)
+    // ---------------------------------------------------------------- hosts (TS-Moved-nicht-Bugfix)
 
     const string DefaultHosts =
         "# Copyright (c) 1993-2009 Microsoft Corp.\r\n#\r\n#\t127.0.0.1       localhost\r\n" +

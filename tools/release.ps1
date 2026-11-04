@@ -9,7 +9,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$Version,
     [string]$Notes = "",
-    [string]$CommitTrailer = ""
+    [string]$CommitTrailer = "",
+    [switch]$OnlyPublish   # nur Schritt 4 (z. B. wenn das Release beim letzten Lauf abgebrochen ist)
 )
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -18,7 +19,8 @@ Set-Location $root
 
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "Version bitte als 1.2.3 angeben." }
 $tag = "v$Version"
-if (git tag --list $tag) { throw "Tag $tag gibt es schon." }
+if (-not $OnlyPublish) {
+if (git tag --list $tag) { throw "Tag $tag gibt es schon (zum Nachholen des Releases: -OnlyPublish)." }
 
 # 1. Version setzen
 $info = Join-Path $root 'src\AssemblyInfo.cs'
@@ -44,13 +46,24 @@ if ($LASTEXITCODE -ne 0) {
 git tag -a $tag -m "Retro Roleplay Tool $tag"
 git push origin HEAD --follow-tags
 if ($LASTEXITCODE -ne 0) { throw "Push fehlgeschlagen." }
+}
 
 # 4. GitHub-Release
 $remote = git remote get-url origin
 if ($remote -notmatch 'github\.com[:/]([^/]+)/([^/.]+)') { throw "origin ist kein GitHub-Repository: $remote" }
 $repo = "$($Matches[1])/$($Matches[2])"
-$cred = "protocol=https`nhost=github.com`n`n" | git credential fill
-$token = ($cred | Where-Object { $_ -like 'password=*' }) -replace '^password=', ''
+# Anmeldung aus Git lesen. Die Anfrage muss reine LF-Zeilenenden und keine BOM haben –
+# PowerShell-Pipes und .NET-Prozesseingaben fügen beides hinzu, daher über eine Datei.
+$request = [IO.Path]::GetTempFileName()
+try {
+    [IO.File]::WriteAllBytes($request, [Text.Encoding]::ASCII.GetBytes("protocol=https`nhost=github.com`n`n"))
+    $env:GIT_TERMINAL_PROMPT = '0'
+    $cred = cmd /c "git credential fill < `"$request`""
+}
+finally {
+    Remove-Item $request -ErrorAction SilentlyContinue
+}
+$token = ((@($cred | Where-Object { $_ -like 'password=*' }) -join '') -replace '^password=', '').Trim()
 if (-not $token) { throw "Keine GitHub-Anmeldung in Git gespeichert." }
 $headers = @{ Authorization = "token $token"; Accept = 'application/vnd.github+json'; 'User-Agent' = 'RetroRoleplayTool-Release' }
 

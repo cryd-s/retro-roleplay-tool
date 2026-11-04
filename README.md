@@ -28,7 +28,7 @@ Alle Versionen findest du unter [Releases](https://github.com/cryd-s/retro-rolep
 **Sonderfunktionen**
 - TeamSpeak 3 in der aktuellen Version installieren/aktualisieren (offizieller Download mit Prüfsummen-Check)
 - SaltyChat in der aktuellen Version installieren
-- TS-Moved-Bugfix (hosts-Eintrag) aktivieren oder wieder entfernen
+- TS-Moved-nicht-Bugfix (hosts-Eintrag) aktivieren oder wieder entfernen
 
 **Discord Bots**
 - [Retro RP](https://retrorp.de) – Bot für Familien-Discord

@@ -5,7 +5,7 @@ using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 
-// TS-Moved-Bugfix: leitet bindloc.triofilmt.de per hosts-Datei auf 127.0.0.1 um.
+// TS-Moved-nicht-Bugfix: leitet bindloc.triofilmt.de per hosts-Datei auf 127.0.0.1 um.
 // Schreibt den Eintrag nur einmal; Entfernen nimmt nur genau diesen Eintrag heraus.
 public static class HostsFix
 {

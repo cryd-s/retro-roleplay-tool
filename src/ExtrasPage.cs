@@ -55,7 +55,7 @@ public class FeatureRow : NeonControl
     }
 }
 
-// Unterseite „Sonderfunktionen“: TeamSpeak 3, SaltyChat, TS-Moved-Bugfix.
+// Unterseite „Sonderfunktionen“: TeamSpeak 3, SaltyChat, TS-Moved-nicht-Bugfix.
 public class ExtrasPage : Panel
 {
     readonly MainForm host;
@@ -88,7 +88,7 @@ public class ExtrasPage : Panel
         saltyRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
             "SaltyChat", "Installiert das aktuelle Plugin von saltyhub.net in TeamSpeak 3.");
         hostsRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
-            "TS-Moved-Bugfix", "Leitet " + HostsFix.Host + " in der hosts-Datei auf 127.0.0.1 um.");
+            "TS-Moved-nicht-Bugfix", "Leitet " + HostsFix.Host + " in der hosts-Datei auf 127.0.0.1 um.");
 
         ts3Row.Action.Click += async delegate { await Guard(InstallTs3Async); };
         saltyRow.Action.Click += async delegate { await Guard(InstallSaltyAsync); };
@@ -329,10 +329,10 @@ public class ExtrasPage : Panel
     {
         bool enable = !hostsActive;
         string text = enable
-            ? "Der TS-Moved-Bugfix trägt folgende Zeile in die Windows-hosts-Datei ein:\n\n    " + HostsFix.Entry +
+            ? "Der TS-Moved-nicht-Bugfix trägt folgende Zeile in die Windows-hosts-Datei ein:\n\n    " + HostsFix.Entry +
               "\n\nWindows fragt dabei nach Administratorrechten.\n\nFortfahren?"
-            : "Der TS-Moved-Bugfix-Eintrag wird wieder aus der hosts-Datei entfernt.\n\nFortfahren?";
-        if (!Confirm(text, "TS-Moved-Bugfix")) return;
+            : "Der TS-Moved-nicht-Bugfix-Eintrag wird wieder aus der hosts-Datei entfernt.\n\nFortfahren?";
+        if (!Confirm(text, "TS-Moved-nicht-Bugfix")) return;
 
         host.SetBusy(true);
         host.SetStatus("Bitte die Windows-Admin-Abfrage bestätigen …", Theme.Text);
@@ -352,6 +352,6 @@ public class ExtrasPage : Panel
             }
         });
         if (code != 0) throw new Exception("Die hosts-Datei konnte nicht geändert werden (Code " + code + ").");
-        host.SetStatus(enable ? "Fertig!  TS-Moved-Bugfix ist aktiv." : "Fertig!  TS-Moved-Bugfix wurde entfernt.", Theme.Orange);
+        host.SetStatus(enable ? "Fertig!  TS-Moved-nicht-Bugfix ist aktiv." : "Fertig!  TS-Moved-nicht-Bugfix wurde entfernt.", Theme.Orange);
     }
 }
