@@ -386,7 +386,7 @@ public class ModeCard : NeonControl
         int right = (int)(body.Right - Theme.S(14));
         int top = (int)body.Y + Theme.S(11);
         Color text = Enabled ? Theme.Text : Theme.Muted;
-        int valueWidth = Theme.S(110);
+        int valueWidth = value.Length == 0 ? 0 : Theme.S(110);
         TextRenderer.DrawText(g, title, titleFont, new Rectangle(left, top, right - left - valueWidth, Theme.S(26)), text,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
         TextRenderer.DrawText(g, value, valueFont, new Rectangle(right - valueWidth, top, valueWidth, Theme.S(26)),

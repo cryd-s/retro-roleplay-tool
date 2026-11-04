@@ -40,11 +40,12 @@ public class MainForm : Form
     NeonProgressBar bar;
     Label status;
     Panel overview, mainPage;
+    GtaSettingsPage gta;
     ExtrasPage extras;
     BotsPage bots;
     readonly List<NavTile> tiles = new List<NavTile>();
     readonly List<NeonButton> backButtons = new List<NeonButton>();
-    Panel[] pages;                 // 0 = Übersicht, 1 = Cleaner, 2 = Sonderfunktionen, 3 = Discord Bots
+    Panel[] pages;                 // 0 = Übersicht, 1 = Cleaner, 2 = GTA-Einstellungen, 3 = Sonderfunktionen, 4 = Discord Bots
     bool measuredOnce;
 
     bool busy;
@@ -107,10 +108,11 @@ public class MainForm : Form
         var tileDefs = new[]
         {
             new[] { "CLEANER", "FiveM-Cache leeren, %TEMP% aufräumen, Stable-Kanal setzen", "" },
+            new[] { "GTA-EINSTELLUNGEN", "Grafik-Profile und Extended Texture Budget für FiveM", "" },
             new[] { "SONDERFUNKTIONEN", "TeamSpeak 3, SaltyChat und TS-Moved-nicht-Bugfix", "" },
             new[] { "DISCORD BOTS", "Retro RP und Retro Business", "" },
         };
-        int tileH = Theme.S(112), tileGlow = Theme.S(6);
+        int tileH = Theme.S(100), tileGlow = Theme.S(6);
         for (int i = 0; i < tileDefs.Length; i++)
         {
             var tile = new NavTile
@@ -185,7 +187,10 @@ public class MainForm : Form
         mainPage.Controls.Add(btnClean);
         y += btnH + Theme.S(12);
 
-        // --- Sonderfunktionen und Discord Bots
+        // --- GTA-Einstellungen, Sonderfunktionen und Discord Bots
+        gta = new GtaSettingsPage(this, m, inner, contentTop) { Visible = false, Location = new Point(0, pageTop) };
+        AddPageHeader(gta, "GTA-EINSTELLUNGEN", m, inner);
+        Controls.Add(gta);
         extras = new ExtrasPage(this, m, inner, contentTop) { Visible = false, Location = new Point(0, pageTop) };
         AddPageHeader(extras, "SONDERFUNKTIONEN", m, inner);
         bots = new BotsPage(m, inner, contentTop) { Visible = false, Location = new Point(0, pageTop) };
@@ -194,8 +199,8 @@ public class MainForm : Form
         Controls.Add(bots);
 
         // Alle Seiten bekommen dieselbe Höhe – die der längsten.
-        pages = new Panel[] { overview, mainPage, extras, bots };
-        int pageHeight = Math.Max(Math.Max(oy, y), Math.Max(extras.ContentHeight, bots.ContentHeight));
+        pages = new Panel[] { overview, mainPage, gta, extras, bots };
+        int pageHeight = Math.Max(Math.Max(oy, y), Math.Max(gta.ContentHeight, Math.Max(extras.ContentHeight, bots.ContentHeight)));
         foreach (Panel p in pages) p.Size = new Size(width, pageHeight);
         y = pageTop + pageHeight;
 
@@ -603,6 +608,7 @@ public class MainForm : Form
         busy = value;
         ApplyEnabled();
         extras.SetButtonsEnabled(!value);
+        gta.SetButtonsEnabled(!value);
     }
 
     // FiveM-Optionen sind nur bedienbar, wenn FiveM gefunden wurde.
@@ -633,13 +639,13 @@ public class MainForm : Form
         bar.Value = permille;
     }
 
-    // 0 = Übersicht, 1 = Cleaner, 2 = Sonderfunktionen, 3 = Discord Bots
+    // 0 = Übersicht, 1 = Cleaner, 2 = GTA-Einstellungen, 3 = Sonderfunktionen, 4 = Discord Bots
     void ShowPage(int index)
     {
         if (busy) return;
         for (int i = 0; i < pages.Length; i++) pages[i].Visible = i == index;
         bar.Value = 0;
-        bar.Visible = index == 1 || index == 2;   // Fortschritt gibt es nur beim Bereinigen und Installieren
+        bar.Visible = index == 1 || index == 3;   // Fortschritt gibt es nur beim Bereinigen und Installieren
         SetStatus(index == 0 ? "Wähle einen Bereich aus." : "", Theme.Muted);
 
         if (index == 1)
@@ -648,7 +654,8 @@ public class MainForm : Form
             if (!measuredOnce) { measuredOnce = true; var ignored = MeasureAllAsync(); }
             else ShowSelectionTotal();
         }
-        if (index == 2) { var ignored = extras.RefreshAsync(); }
+        if (index == 2) { var ignored = gta.RefreshAsync(); }
+        if (index == 3) { var ignored = extras.RefreshAsync(); }
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
