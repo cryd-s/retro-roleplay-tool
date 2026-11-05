@@ -39,6 +39,8 @@ Alle Versionen (auch die exe einzeln) findest du unter [Releases](https://github
 - SaltyChat in der aktuellen Version installieren
 - TeamSpeak-Sounds dauerhaft deaktivieren oder wieder aktivieren (Sound-Paket „Sounds deactivated“, Sprache bleibt)
 - TS-Moved-nicht-Bugfix (hosts-Eintrag) aktivieren oder wieder entfernen
+- Rockstar Launcher Fix: DNS-Cache leeren, Winsock zurücksetzen und `%LOCALAPPDATA%\Rockstar Games\Launcher` leeren
+  - Danach den PC neu starten und im Launcher neu anmelden; VPN, Tailscale und eigene DNS-Filter vorher selbst ausschalten
 - FiveM als Nicht-Steam-Spiel in die Steam-Bibliothek eintragen und Steam Input dafür aktivieren, oder beides wieder entfernen
   - Steam wird dafür normal geschlossen und danach wieder gestartet; vorher wird der aktuelle Stand gespeichert
   - **Noch nicht mit echtem Steam getestet.** FiveM unterstützt Steam Input nicht offiziell, der Controller funktioniert also vielleicht nicht in jedem Fall

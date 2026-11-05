@@ -2,7 +2,7 @@
 setlocal
 cd /d "%~dp0"
 set CSC=%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe
-set CORE=src\ScreenFit.cs src\FolderCleaner.cs src\FiveMIni.cs src\CleanTargets.cs src\FiveMLocator.cs src\AppSettings.cs src\FiveMProcess.cs src\HostsFix.cs src\Ts3.cs src\SaltyChat.cs src\Downloader.cs src\GtaSettings.cs src\RpSettings.cs src\SteamLibrary.cs src\UpdateCheck.cs src\ModCheck.cs src\Ts3Sounds.cs
+set CORE=src\ScreenFit.cs src\FolderCleaner.cs src\FiveMIni.cs src\CleanTargets.cs src\FiveMLocator.cs src\AppSettings.cs src\FiveMProcess.cs src\HostsFix.cs src\Ts3.cs src\SaltyChat.cs src\Downloader.cs src\GtaSettings.cs src\RpSettings.cs src\SteamLibrary.cs src\UpdateCheck.cs src\ModCheck.cs src\Ts3Sounds.cs src\RockstarLauncher.cs
 set REFS=/r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:System.Web.Extensions.dll
 if not exist bin mkdir bin
 

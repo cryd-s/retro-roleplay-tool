@@ -26,6 +26,13 @@ static class Program
             }
         }
 
+        // Admin-Hilfsmodus für den Rockstar Launcher Fix (wird mit Adminrechten gestartet)
+        if (args.Length == 1 && args[0] == RockstarLauncher.ElevatedArgument)
+        {
+            try { return RockstarLauncher.RunAll(RockstarLauncher.NetworkCommands()); }
+            catch (Exception) { return 1; }
+        }
+
         // Scharfe Darstellung bei 125 %/150 % Skalierung: selbst skalieren statt Windows-Bitmap-Zoom.
         try { SetProcessDPIAware(); } catch { }
         float dpiScale;

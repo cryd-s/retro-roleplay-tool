@@ -30,6 +30,7 @@ static class Tests
             UpdateTests();
             ModCheckTests();
             Ts3SoundTests();
+            RockstarTests();
             DownloadTests();
         }
         finally
@@ -840,6 +841,79 @@ static class Tests
     static void SameBytes(byte[] expected, byte[] actual, string what)
     {
         Equal(BitConverter.ToString(expected), BitConverter.ToString(actual), what);
+    }
+
+    static void RockstarTests()
+    {
+        Run("Rockstar: Cache-Ordner ist genau der Launcher-Ordner", () =>
+        {
+            Equal(@"C:\L\Rockstar Games\Launcher", RockstarLauncher.CacheDir(@"C:\L"), "Pfad");
+        });
+
+        Run("Rockstar: Admin-Befehle sind genau die zwei erwarteten", () =>
+        {
+            var commands = RockstarLauncher.NetworkCommands();
+            Equal(2, commands.Count, "Anzahl");
+            Equal(Path.Combine(Environment.SystemDirectory, "ipconfig.exe"), commands[0].Key, "ipconfig");
+            Equal("/flushdns", commands[0].Value, "flushdns");
+            Equal(Path.Combine(Environment.SystemDirectory, "netsh.exe"), commands[1].Key, "netsh");
+            Equal("winsock reset", commands[1].Value, "winsock");
+            True(File.Exists(commands[0].Key) && File.Exists(commands[1].Key), "Programme vorhanden");
+        });
+
+        Run("Rockstar: Fehlercode des ersten Fehlers zählt, alle Befehle laufen durch", () =>
+        {
+            string cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+            string marker = Path.Combine(NewDir("rockstarrun"), "lief.txt");
+            Func<string, KeyValuePair<string, string>> c = a => new KeyValuePair<string, string>(cmd, "/c " + a);
+            Equal(0, RockstarLauncher.RunAll(new[] { c("exit 0"), c("exit 0") }), "alles gut");
+            Equal(5, RockstarLauncher.RunAll(new[] { c("exit 5"), c("echo x> \"" + marker + "\""), c("exit 7") }), "erster Fehler");
+            True(File.Exists(marker), "zweiter Befehl lief trotzdem");
+        });
+
+        Run("Rockstar: Launcher wird am Pfad erkannt, fremde Launcher bleiben in Ruhe", () =>
+        {
+            True(RockstarLauncher.IsLauncherProcess("Launcher", @"C:\Program Files\Rockstar Games\Launcher\Launcher.exe", null), "Standardordner");
+            True(RockstarLauncher.IsLauncherProcess("launcher", @"C:\Games\Rockstar\Launcher.exe", @"C:\Games\Rockstar"), "eigener Ordner");
+            True(RockstarLauncher.IsLauncherProcess("Launcher", @"C:\Games\Rockstar\Launcher.exe", "\"C:\\Games\\Rockstar\\\""), "Ordner mit Anführungszeichen");
+            True(!RockstarLauncher.IsLauncherProcess("Launcher", @"C:\Games\RockstarOther\Launcher.exe", @"C:\Games\Rockstar"), "ähnlicher Ordner");
+            True(!RockstarLauncher.IsLauncherProcess("Launcher", @"C:\Epic\Launcher.exe", @"C:\Games\Rockstar"), "fremder Launcher");
+            True(!RockstarLauncher.IsLauncherProcess("Launcher", null, @"C:\Games\Rockstar"), "Pfad unbekannt");
+            True(RockstarLauncher.IsLauncherProcess("RockstarService", null, null), "Dienst");
+            True(RockstarLauncher.IsLauncherProcess("LauncherPatcher", null, null), "Patcher");
+            True(!RockstarLauncher.IsLauncherProcess("notepad", @"C:\Games\Rockstar\notepad.exe", @"C:\Games\Rockstar"), "anderes Programm");
+        });
+
+        Run("Rockstar: laufendes Spiel wird erkannt", () =>
+        {
+            True(RockstarLauncher.IsGameProcessName("GTA5"), "GTA5");
+            True(RockstarLauncher.IsGameProcessName("GTA5_Enhanced"), "Enhanced");
+            True(RockstarLauncher.IsGameProcessName("PlayGTAV"), "PlayGTAV");
+            True(!RockstarLauncher.IsGameProcessName("Launcher"), "Launcher zählt nicht");
+        });
+
+        Run("Rockstar: Fertig-Text nennt übersprungene Dateien nur, wenn es welche gibt", () =>
+        {
+            True(!RockstarLauncher.DoneText(0).Contains("Benutzung"), "keine");
+            True(RockstarLauncher.DoneText(1).Contains("1 Datei war noch in Benutzung und wurde nicht"), "eine");
+            True(RockstarLauncher.DoneText(3).Contains("3 Dateien waren noch in Benutzung und wurden nicht"), "mehrere");
+        });
+
+        Run("Rockstar: Leeren entfernt den Inhalt, der Ordner daneben bleibt", () =>
+        {
+            string local = NewDir("rockstarclean");
+            string cache = RockstarLauncher.CacheDir(local);
+            string sub = Path.Combine(cache, "B9908D06");
+            string other = Path.Combine(local, "Rockstar Games", "GTA V");
+            Directory.CreateDirectory(sub);
+            Directory.CreateDirectory(other);
+            File.WriteAllText(Path.Combine(cache, "settings_user.dat"), "x");
+            File.WriteAllText(Path.Combine(sub, "datei.bin"), "x");
+            File.WriteAllText(Path.Combine(other, "behalten.txt"), "x");
+            FolderCleaner.CleanContents(cache, null);
+            Equal(0, Directory.GetFileSystemEntries(cache).Length, "Cache leer");
+            True(File.Exists(Path.Combine(other, "behalten.txt")), "GTA-V-Ordner unberührt");
+        });
     }
 
     // Tabelle wie in der echten settings.db von TeamSpeak 3

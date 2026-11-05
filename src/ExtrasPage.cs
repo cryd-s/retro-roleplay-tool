@@ -42,7 +42,7 @@ public class FeatureRow : NeonControl
         Graphics g = e.Graphics;
         Theme.Prepare(g);
         int textWidth = Width - buttonWidth - Theme.S(12);
-        int y = Theme.S(10);
+        int y = (Height - Theme.S(65)) / 2;    // Textblock senkrecht mittig, auch bei niedrigeren Zeilen
         TextRenderer.DrawText(g, title, titleFont, new Rectangle(0, y, textWidth, Theme.S(24)), Theme.Text,
             TextFormatFlags.Left | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
         y += Theme.S(25);
@@ -55,11 +55,11 @@ public class FeatureRow : NeonControl
     }
 }
 
-// Unterseite „Sonderfunktionen“: TeamSpeak 3, SaltyChat, TS-Sounds, TS-Moved-nicht-Bugfix, FiveM in Steam, Grafik-Mods.
+// Unterseite „Sonderfunktionen“: TeamSpeak 3, SaltyChat, TS-Sounds, TS-Moved-nicht-Bugfix, Rockstar Launcher Fix, FiveM in Steam, Grafik-Mods.
 public class ExtrasPage : Panel
 {
     readonly MainForm host;
-    readonly FeatureRow ts3Row, saltyRow, soundRow, hostsRow, steamRow, modRow;
+    readonly FeatureRow ts3Row, saltyRow, soundRow, hostsRow, rockstarRow, steamRow, modRow;
     readonly AppSettings settings = new AppSettings(AppSettings.DefaultPath);
     ModReport modReport;                 // null = FiveM nicht gefunden oder nicht lesbar
     bool soundsAvailable, soundsDisabled;
@@ -78,7 +78,7 @@ public class ExtrasPage : Panel
         BackColor = Theme.Bg;
         int y = top;
 
-        int rowHeight = Theme.S(84), buttonWidth = Theme.S(230);
+        int rowHeight = Theme.S(73), buttonWidth = Theme.S(230);   // 7 Zeilen, ohne dass das Fenster wächst
         ts3Row = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
             "TeamSpeak 3", "Lädt die aktuelle Version von teamspeak.com, prüft sie und installiert still.");
         saltyRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
@@ -87,6 +87,9 @@ public class ExtrasPage : Panel
             "TeamSpeak-Sounds", "Schaltet alle TeamSpeak-Töne dauerhaft ab. Sprache bleibt.");
         hostsRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
             "TS-Moved-nicht-Bugfix", "Leitet " + HostsFix.Host + " in der hosts-Datei auf 127.0.0.1 um.");
+        rockstarRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
+            "Rockstar Launcher Fix", "Setzt DNS-Cache und Winsock zurück und leert den Launcher-Cache.");
+        rockstarRow.Action.Text = "FIX STARTEN";
         steamRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
             "FiveM in Steam + Controller", "Trägt FiveM in die Steam-Bibliothek ein und aktiviert Steam Input.");
         modRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
@@ -98,6 +101,7 @@ public class ExtrasPage : Panel
         saltyRow.Action.Click += async delegate { await Guard(InstallSaltyAsync); };
         soundRow.Action.Click += async delegate { await Guard(ToggleSoundsAsync); };
         hostsRow.Action.Click += async delegate { await Guard(ToggleHostsAsync); };
+        rockstarRow.Action.Click += async delegate { await Guard(RunRockstarFixAsync); };
         steamRow.Action.Click += async delegate { await Guard(ToggleSteamAsync); };
         modRow.Action.Click += delegate { ShowModDetails(); };
         ContentHeight = y + Theme.S(12);
@@ -120,6 +124,7 @@ public class ExtrasPage : Panel
         saltyRow.Action.Enabled = enabled && !refreshing;
         soundRow.Action.Enabled = enabled && !refreshing && soundsAvailable;
         hostsRow.Action.Enabled = enabled && !refreshing;
+        rockstarRow.Action.Enabled = enabled && !refreshing;
         steamRow.Action.Enabled = enabled && !refreshing && steamConfigDir != null && (steamReady || host.FiveMAppDir != null);
         modRow.Action.Enabled = enabled && !refreshing && modReport != null;
     }
@@ -131,7 +136,7 @@ public class ExtrasPage : Panel
         if (refreshing) return;
         refreshing = true;
         SetButtonsEnabled(!host.Busy);
-        foreach (FeatureRow r in new[] { ts3Row, saltyRow, soundRow, hostsRow, steamRow, modRow })
+        foreach (FeatureRow r in new[] { ts3Row, saltyRow, soundRow, hostsRow, rockstarRow, steamRow, modRow })
         {
             r.Value = "wird geprüft …";
             r.ValueColor = Theme.Muted;
@@ -153,6 +158,9 @@ public class ExtrasPage : Panel
 
         // TeamSpeak-Sounds (lokal, schnell)
         ShowSoundState();
+
+        // Rockstar Launcher (lokal, schnell)
+        ShowRockstarState();
 
         // TeamSpeak 3
         string ts3Installed = Ts3.InstalledVersion();
@@ -214,6 +222,69 @@ public class ExtrasPage : Panel
             steamConfigDir = null;
             steamRow.Value = "Steam-Dateien nicht lesbar: " + ex.Message;
         }
+    }
+
+    static string RockstarCacheDir
+    {
+        get { return RockstarLauncher.CacheDir(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)); }
+    }
+
+    void ShowRockstarState()
+    {
+        string dir = RockstarCacheDir;
+        bool found = Directory.Exists(dir);
+        rockstarRow.Value = found ? "Launcher-Cache: " + SizeFormat.Format(FolderCleaner.MeasureSize(dir)) : "kein Launcher-Cache gefunden";
+        rockstarRow.ValueColor = found ? Theme.Orange : Theme.Muted;
+    }
+
+    async Task RunRockstarFixAsync()
+    {
+        if (RockstarLauncher.IsGameRunning())
+        {
+            NeonDialog.Show(FindForm(), RockstarLauncher.GameRunningText, "Rockstar Launcher Fix", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        if (NeonDialog.Show(FindForm(), RockstarLauncher.ConfirmText, "Rockstar Launcher Fix", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+            return;
+
+        host.SetBusy(true);
+        // Zuerst die Admin-Abfrage: Wird sie abgelehnt, ist noch nichts verändert.
+        host.SetStatus("Bitte die Windows-Admin-Abfrage bestätigen …", Theme.Text);
+        int code = await RunElevatedAsync(RockstarLauncher.ElevatedArgument);
+        if (code != 0) throw new Exception("DNS-Cache oder Winsock konnten nicht zurückgesetzt werden (Code " + code + "). Der Launcher-Cache wurde nicht angefasst.");
+
+        host.SetStatus("Rockstar Launcher wird geschlossen …", Theme.Text);
+        await Task.Run(() => RockstarLauncher.CloseLauncher());
+
+        host.SetStatus("Launcher-Cache wird gelöscht …", Theme.Text);
+        string dir = RockstarCacheDir;
+        int skipped = 0;
+        if (Directory.Exists(dir))
+        {
+            CleanResult result = await Task.Run(() => FolderCleaner.CleanContents(dir, null));
+            skipped = result.FilesSkipped;
+        }
+        host.SetStatus("Fertig!  Bitte jetzt den PC neu starten.", Theme.Orange);
+        NeonDialog.Show(FindForm(), RockstarLauncher.DoneText(skipped), "Rockstar Launcher Fix", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    // Das Programm startet sich selbst kurz mit Adminrechten, nur für diesen Schritt.
+    static Task<int> RunElevatedAsync(string arguments)
+    {
+        var psi = new ProcessStartInfo(Application.ExecutablePath, arguments)
+        {
+            UseShellExecute = true,
+            Verb = "runas",
+            WindowStyle = ProcessWindowStyle.Hidden,
+        };
+        return Task.Run(() =>
+        {
+            using (Process p = Process.Start(psi))
+            {
+                p.WaitForExit();
+                return p.ExitCode;
+            }
+        });
     }
 
     void ShowSoundState()
@@ -593,21 +664,7 @@ public class ExtrasPage : Panel
 
         host.SetBusy(true);
         host.SetStatus("Bitte die Windows-Admin-Abfrage bestätigen …", Theme.Text);
-        // Das Programm startet sich selbst kurz mit Adminrechten, nur für diesen Schritt.
-        var psi = new ProcessStartInfo(Application.ExecutablePath, "--hosts-fix " + (enable ? "on" : "off"))
-        {
-            UseShellExecute = true,
-            Verb = "runas",
-            WindowStyle = ProcessWindowStyle.Hidden,
-        };
-        int code = await Task.Run(() =>
-        {
-            using (Process p = Process.Start(psi))
-            {
-                p.WaitForExit();
-                return p.ExitCode;
-            }
-        });
+        int code = await RunElevatedAsync("--hosts-fix " + (enable ? "on" : "off"));
         if (code != 0) throw new Exception("Die hosts-Datei konnte nicht geändert werden (Code " + code + ").");
         host.SetStatus(enable ? "Fertig!  TS-Moved-nicht-Bugfix ist aktiv." : "Fertig!  TS-Moved-nicht-Bugfix wurde entfernt.", Theme.Orange);
     }
