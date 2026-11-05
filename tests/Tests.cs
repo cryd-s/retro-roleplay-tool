@@ -27,6 +27,7 @@ static class Tests
             SaltyTests();
             GtaSettingsTests();
             SteamTests();
+            UpdateTests();
             DownloadTests();
         }
         finally
@@ -837,6 +838,66 @@ static class Tests
     static void SameBytes(byte[] expected, byte[] actual, string what)
     {
         Equal(BitConverter.ToString(expected), BitConverter.ToString(actual), what);
+    }
+
+    static string ReleaseJson(string tag, string assetName, string url, string state)
+    {
+        return "{\"tag_name\":\"" + tag + "\",\"assets\":[" +
+               "{\"name\":\"RetroRoleplayTool.exe\",\"state\":\"uploaded\",\"browser_download_url\":\"" + UpdateBase + tag + "/RetroRoleplayTool.exe\"}," +
+               "{\"name\":\"" + assetName + "\",\"state\":\"" + state + "\",\"browser_download_url\":\"" + url + "\"}]}";
+    }
+
+    const string UpdateBase = "https://github.com/cryd-s/retro-roleplay-tool/releases/download/";
+    const string UpdateZip = UpdateBase + "v1.5.0/RetroRoleplayTool.zip";
+
+    static void UpdateTests()
+    {
+        Run("Update: neuere Version liefert den direkten ZIP-Link", () =>
+        {
+            UpdateInfo u = UpdateCheck.Evaluate("1.4.0", ReleaseJson("v1.5.0", "RetroRoleplayTool.zip", UpdateZip, "uploaded"));
+            Equal("1.5.0", u.Version, "Version");
+            Equal(UpdateZip, u.ZipUrl, "ZIP-Link, nicht die exe");
+        });
+
+        Run("Update: gleiche oder ältere Version zeigt nichts", () =>
+        {
+            string json = ReleaseJson("v1.5.0", "RetroRoleplayTool.zip", UpdateZip, "uploaded");
+            Equal<UpdateInfo>(null, UpdateCheck.Evaluate("1.5.0", json), "gleich");
+            Equal<UpdateInfo>(null, UpdateCheck.Evaluate("1.6.0", json), "lokal neuer");
+        });
+
+        Run("Update: Versionen werden numerisch verglichen", () =>
+        {
+            string url = UpdateBase + "v1.10.0/RetroRoleplayTool.zip";
+            string json = ReleaseJson("v1.10.0", "RetroRoleplayTool.zip", url, "uploaded");
+            Equal("1.10.0", UpdateCheck.Evaluate("1.9.0", json).Version, "1.10.0 ist neuer als 1.9.0");
+        });
+
+        Run("Update: ohne fertige ZIP kein Hinweis", () =>
+        {
+            Equal<UpdateInfo>(null, UpdateCheck.Evaluate("1.4.0", ReleaseJson("v1.5.0", "Anderes.zip", UpdateZip, "uploaded")), "andere Datei");
+            Equal<UpdateInfo>(null, UpdateCheck.Evaluate("1.4.0", ReleaseJson("v1.5.0", "RetroRoleplayTool.zip", UpdateZip, "starter")), "Upload läuft noch");
+            Equal<UpdateInfo>(null, UpdateCheck.Evaluate("1.4.0", "{\"tag_name\":\"v1.5.0\"}"), "keine Dateien");
+        });
+
+        Run("Update: Links außerhalb des Repositorys werden nie geöffnet", () =>
+        {
+            foreach (string url in new[]
+            {
+                "https://example.com/RetroRoleplayTool.zip",
+                "http://github.com/cryd-s/retro-roleplay-tool/releases/download/v1.5.0/RetroRoleplayTool.zip",
+                "https://github.com/jemand/retro-roleplay-tool/releases/download/v1.5.0/RetroRoleplayTool.zip",
+                "https://github.com/cryd-s/retro-roleplay-tool/releases/download.example.com/RetroRoleplayTool.zip",
+            })
+                Equal<UpdateInfo>(null, UpdateCheck.Evaluate("1.4.0", ReleaseJson("v1.5.0", "RetroRoleplayTool.zip", url, "uploaded")), url);
+        });
+
+        Run("Update: unbrauchbare Antworten zeigen nichts", () =>
+        {
+            foreach (string json in new[] { "", "kein json", "[]", "{}", "{\"tag_name\":5}", "{\"message\":\"API rate limit exceeded\"}" })
+                Equal<UpdateInfo>(null, UpdateCheck.Evaluate("1.4.0", json), "Antwort: " + json);
+            Equal<UpdateInfo>(null, UpdateCheck.Evaluate("1.4.0", ReleaseJson("neu", "RetroRoleplayTool.zip", UpdateZip, "uploaded")), "Tag ohne Version");
+        });
     }
 
     static void SteamTests()

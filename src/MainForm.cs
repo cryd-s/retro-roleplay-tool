@@ -39,7 +39,9 @@ public class MainForm : Form
     NeonButton btnMeasure, btnClean;
     NeonProgressBar bar;
     Label status;
-    Panel overview, mainPage;
+    Panel overview, mainPage, updateBar;
+    Label updateText;
+    NeonButton updateButton;
     GtaSettingsPage gta;
     ExtrasPage extras;
     BotsPage bots;
@@ -94,6 +96,7 @@ public class MainForm : Form
         Image banner = LoadBanner();
         int bannerHeight = banner != null ? (int)Math.Round((double)width * banner.Height / banner.Width) : Theme.S(80);
         Controls.Add(new BannerView(banner) { Bounds = new Rectangle(0, 0, width, bannerHeight) });
+        BuildUpdateBar(width, bannerHeight, m);
 
         // Die Seiten liegen übereinander; sichtbar ist immer nur eine.
         int pageTop = bannerHeight;
@@ -234,6 +237,48 @@ public class MainForm : Form
         ShowLocation();
     }
 
+    // ------------------------------------------------------------ Update-Hinweis
+
+    // Liegt über dem unteren Bannerrand: auf jeder Seite sichtbar, und das Fenster behält seine Größe
+    // (es wurde beim Start passend zum Bildschirm aufgebaut).
+    void BuildUpdateBar(int width, int bannerHeight, int m)
+    {
+        int h = Theme.S(56), buttonW = Theme.S(230);
+        updateBar = new Panel { BackColor = Theme.Bg, Bounds = new Rectangle(0, bannerHeight - h, width, h), Visible = false };
+        updateBar.Controls.Add(new Panel { BackColor = Theme.Orange, Bounds = new Rectangle(0, 0, width, Theme.S(2)) });
+        updateText = new Label
+        {
+            ForeColor = Theme.Orange,
+            Font = Theme.MakeFont("Segoe UI Semibold", 10.5f),
+            TextAlign = ContentAlignment.MiddleLeft,
+            AutoSize = false,
+            Bounds = new Rectangle(m, Theme.S(2), width - 2 * m - buttonW, h - Theme.S(2)),
+        };
+        updateBar.Controls.Add(updateText);
+        updateButton = new NeonButton
+        {
+            Text = "ZIP HERUNTERLADEN",
+            Primary = true,
+            Bounds = new Rectangle(width - m - buttonW + Theme.S(6), Theme.S(4), buttonW, h - Theme.S(6)),
+        };
+        updateBar.Controls.Add(updateButton);
+        Controls.Add(updateBar);
+        updateBar.BringToFront();
+    }
+
+    async Task CheckForUpdateAsync()
+    {
+        string current = AppVersion().Substring(1);
+        UpdateInfo update;
+        try { update = await Task.Run(() => UpdateCheck.Fetch(current)); }
+        catch (Exception) { return; }   // kein Internet o. Ä.: dann eben kein Hinweis
+        if (update == null || IsDisposed) return;
+
+        updateText.Text = "Neue Version v" + update.Version + " verfügbar  ·  du nutzt v" + current;
+        updateButton.Click += delegate { Projects.Open(update.ZipUrl, this); };
+        updateBar.Visible = true;
+    }
+
     // ------------------------------------------------------------ FiveM-Installation
 
     void SetLocation(FiveMLocation location)
@@ -348,6 +393,7 @@ public class MainForm : Form
     {
         base.OnShown(e);
         ShowPage(0);
+        var ignored = CheckForUpdateAsync();
     }
 
     void SetMode(bool full)
