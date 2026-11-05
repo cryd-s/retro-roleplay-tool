@@ -1,0 +1,49 @@
+# Lädt die Download-Seite per FTPS nach https://tool.retrorp.de hoch (All-Inkl).
+# Läuft, wenn sich docs/index.html auf main ändert, oder von Hand unter Actions.
+# Der FTP-Benutzer ist auf den Ordner /retrotool/ beschränkt, die Datei landet also direkt in dessen Wurzel.
+name: Download-Seite hochladen
+
+on:
+  push:
+    branches: [main]
+    paths: [docs/index.html]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upload-page
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Per FTPS hochladen
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          if [ -z "$FTP_HOST" ] || [ -z "$FTP_USER" ] || [ -z "$FTP_PASSWORD" ]; then
+            echo "::error::Bitte FTP_HOST, FTP_USER und FTP_PASSWORD unter Settings > Secrets and variables > Actions eintragen."
+            exit 1
+          fi
+          # Passwort über eine Konfigurationsdatei, damit es nicht in der Prozessliste steht.
+          umask 077
+          printf 'user = "%s:%s"\n' "$FTP_USER" "$FTP_PASSWORD" > "$RUNNER_TEMP/ftp.conf"
+          curl --fail --silent --show-error --ssl-reqd --config "$RUNNER_TEMP/ftp.conf" \
+            --upload-file docs/index.html "ftp://$FTP_HOST/index.html"
+          rm -f "$RUNNER_TEMP/ftp.conf"
+
+      - name: Seite prüfen
+        run: |
+          curl --fail --silent --show-error --location https://tool.retrorp.de/ --output live.html
+          if ! cmp --silent docs/index.html live.html; then
+            echo "::error::Hochgeladen, aber tool.retrorp.de zeigt etwas anderes. Eine Weiterleitung prüfen: Subdomain im KAS auf Webspace stellen und eine .htaccess im Ordner kontrollieren."
+            exit 1
+          fi
