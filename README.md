@@ -37,6 +37,9 @@ Alle Versionen (auch die exe einzeln) findest du unter [Releases](https://github
 - TeamSpeak 3 in der aktuellen Version installieren/aktualisieren (offizieller Download mit Prüfsummen-Check)
 - SaltyChat in der aktuellen Version installieren
 - TS-Moved-nicht-Bugfix (hosts-Eintrag) aktivieren oder wieder entfernen
+- FiveM als Nicht-Steam-Spiel in die Steam-Bibliothek eintragen und Steam Input dafür aktivieren, oder beides wieder entfernen
+  - Steam wird dafür normal geschlossen und danach wieder gestartet; vorher wird der aktuelle Stand gespeichert
+  - **Noch nicht mit echtem Steam getestet.** FiveM unterstützt Steam Input nicht offiziell, der Controller funktioniert also vielleicht nicht in jedem Fall
 
 **Discord Bots**
 - [Retro RP](https://retrorp.de) – Bot für Familien-Discord

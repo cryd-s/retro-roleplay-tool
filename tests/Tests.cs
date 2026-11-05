@@ -26,6 +26,7 @@ static class Tests
             Ts3Tests();
             SaltyTests();
             GtaSettingsTests();
+            SteamTests();
             DownloadTests();
         }
         finally
@@ -785,6 +786,252 @@ static class Tests
             True(a[0] == 0xEF && a.Length == 3 + 1 + 2, "BOM bleibt");
             True(b[0] == (byte)'y' && b.Length == 1 + 2, "ohne BOM bleibt ohne");
             True(!File.Exists(without + ".rrtool.tmp"), "keine Zwischendatei übrig");
+        });
+    }
+
+    // ---------------------------------------------------------------- Steam
+
+    const string LocalConfig =
+        "\"UserLocalConfigStore\"\n{\n\t\"friends\"\n\t{\n\t\t\"name\"\t\t\"a \\\"b\\\" { c }\"\n\t}\n" +
+        "\t\"Software\"\n\t{\n\t\t\"apps\"\n\t\t{\n\t\t\t\"7\"\n\t\t\t{\n\t\t\t\t\"x\"\t\t\"1\"\n\t\t\t}\n\t\t}\n\t}\n}\n";
+
+    static byte[] Bytes(params object[] parts)
+    {
+        var ms = new MemoryStream();
+        foreach (object p in parts)
+        {
+            if (p is string) { byte[] b = Encoding.UTF8.GetBytes((string)p); ms.Write(b, 0, b.Length); }
+            else if (p is byte[]) { var b = (byte[])p; ms.Write(b, 0, b.Length); }
+            else ms.WriteByte(Convert.ToByte(p));
+        }
+        return ms.ToArray();
+    }
+
+    // Ein fremder Eintrag, wie Steam ihn schreibt, mit einem Feld, das das Tool nicht kennt.
+    static byte[] ForeignEntry()
+    {
+        return Bytes(2, "appid", 0, new byte[] { 0x78, 0x56, 0x34, 0x92 },
+                     1, "AppName", 0, "Mein Spiel", 0,
+                     1, "Exe", 0, "\"D:\\Spiel\\spiel.exe\"", 0,
+                     1, "sortas", 0, "zzz", 0,
+                     0, "tags", 0, 1, "0", 0, "Favorit", 0, 8,
+                     8);
+    }
+
+    static byte[] ShortcutFile(params byte[][] bodies)
+    {
+        var ms = new MemoryStream();
+        byte[] head = Bytes(0, "shortcuts", 0);
+        ms.Write(head, 0, head.Length);
+        for (int i = 0; i < bodies.Length; i++)
+        {
+            byte[] key = Bytes(0, i.ToString(), 0);
+            ms.Write(key, 0, key.Length);
+            ms.Write(bodies[i], 0, bodies[i].Length);
+        }
+        ms.WriteByte(8);
+        ms.WriteByte(8);
+        return ms.ToArray();
+    }
+
+    static void SameBytes(byte[] expected, byte[] actual, string what)
+    {
+        Equal(BitConverter.ToString(expected), BitConverter.ToString(actual), what);
+    }
+
+    static void SteamTests()
+    {
+        Run("Steam: Prüfsumme CRC32 (Standard-Prüfwert)", () =>
+            Equal(0xCBF43926u, SteamShortcuts.Crc32(Encoding.ASCII.GetBytes("123456789")), "CRC32"));
+
+        Run("Steam: App-ID aus Exe und Name, oberstes Bit gesetzt", () =>
+        {
+            uint expected = SteamShortcuts.Crc32(Encoding.UTF8.GetBytes("\"C:\\FiveM\\FiveM.exe\"FiveM")) | 0x80000000u;
+            Equal(expected, SteamShortcuts.ComputeAppId("\"C:\\FiveM\\FiveM.exe\"", "FiveM"), "App-ID");
+        });
+
+        Run("Steam: fehlende oder leere Datei ergibt leere Liste", () =>
+        {
+            Equal(0, SteamShortcuts.Parse(new byte[0]).Count, "leer");
+            Equal(0, SteamShortcuts.Parse(null).Count, "null");
+            SameBytes(Bytes(0, "shortcuts", 0, 8, 8), SteamShortcuts.Build(new List<SteamShortcut>()), "leere Datei");
+        });
+
+        Run("Steam: Eintrag hat das erwartete Format", () =>
+        {
+            SteamShortcut s = SteamShortcuts.Create("FiveM", "C:\\Spiele\\FiveM\\FiveM.exe");
+            uint id = SteamShortcuts.ComputeAppId("\"C:\\Spiele\\FiveM\\FiveM.exe\"", "FiveM");
+            byte[] expected = Bytes(
+                2, "appid", 0, BitConverter.GetBytes(id),
+                1, "AppName", 0, "FiveM", 0,
+                1, "Exe", 0, "\"C:\\Spiele\\FiveM\\FiveM.exe\"", 0,
+                1, "StartDir", 0, "\"C:\\Spiele\\FiveM\\\"", 0,
+                1, "icon", 0, "C:\\Spiele\\FiveM\\FiveM.exe", 0,
+                1, "ShortcutPath", 0, 0,
+                1, "LaunchOptions", 0, 0,
+                2, "IsHidden", 0, 0, 0, 0, 0,
+                2, "AllowDesktopConfig", 0, 1, 0, 0, 0,
+                2, "AllowOverlay", 0, 1, 0, 0, 0,
+                2, "OpenVR", 0, 0, 0, 0, 0,
+                2, "Devkit", 0, 0, 0, 0, 0,
+                1, "DevkitGameID", 0, 0,
+                2, "DevkitOverrideAppID", 0, 0, 0, 0, 0,
+                2, "LastPlayTime", 0, 0, 0, 0, 0,
+                1, "FlatpakAppID", 0, 0,
+                0, "tags", 0, 8,
+                8);
+            SameBytes(expected, s.Body, "Eintrag");
+            Equal(id, s.AppId, "App-ID");
+        });
+
+        Run("Steam: neue Datei lässt sich wieder lesen", () =>
+        {
+            var list = new List<SteamShortcut> { SteamShortcuts.Create("FiveM", "C:\\Spiele\\FiveM\\FiveM.exe") };
+            List<SteamShortcut> read = SteamShortcuts.Parse(SteamShortcuts.Build(list));
+            Equal(1, read.Count, "Anzahl");
+            Equal("FiveM", read[0].AppName, "Name");
+            Equal("\"C:\\Spiele\\FiveM\\FiveM.exe\"", read[0].Exe, "Exe");
+            True(SteamShortcuts.IsFiveM(read[0]), "als FiveM erkannt");
+        });
+
+        Run("Steam: vorhandene Spiele bleiben Byte für Byte erhalten", () =>
+        {
+            byte[] file = ShortcutFile(ForeignEntry());
+            List<SteamShortcut> list = SteamShortcuts.Parse(file);
+            Equal("Mein Spiel", list[0].AppName, "Name");
+            Equal(0x92345678u, list[0].AppId, "App-ID");
+            True(!SteamShortcuts.IsFiveM(list[0]), "kein FiveM");
+            SameBytes(file, SteamShortcuts.Build(list), "unverändert");
+        });
+
+        Run("Steam: beschädigte Datei wird abgelehnt", () =>
+        {
+            Throws<InvalidDataException>(() => SteamShortcuts.Parse(Bytes(0, "shortcuts", 0, 0, "0", 0, 1, "AppName")));
+            Throws<InvalidDataException>(() => SteamShortcuts.Parse(Bytes("kein vdf")));
+            Throws<InvalidDataException>(() => SteamShortcuts.Parse(Bytes(0, "shortcuts", 0, 8)));
+            Throws<InvalidDataException>(() => SteamShortcuts.Parse(Bytes(0, "shortcuts", 0, 8, 8, 8)));
+        });
+
+        Run("VDF-Text: Wert lesen, Klammern und Anführungszeichen in Texten stören nicht", () =>
+        {
+            Equal("a \\\"b\\\" { c }", TextVdf.Get(LocalConfig, new[] { "UserLocalConfigStore", "friends" }, "name"), "Text");
+            Equal("1", TextVdf.Get(LocalConfig, new[] { "userlocalconfigstore", "SOFTWARE", "Apps", "7" }, "X"), "Groß/klein egal");
+            Equal<string>(null, TextVdf.Get(LocalConfig, new[] { "UserLocalConfigStore", "apps" }, "x"), "fehlt");
+        });
+
+        Run("VDF-Text: fehlende Abschnitte werden angelegt, Rest bleibt gleich", () =>
+        {
+            string[] path = { "UserLocalConfigStore", "apps", "123" };
+            string result = TextVdf.Set(LocalConfig, path, "UseSteamControllerConfig", "2");
+            string added = "\t\"apps\"\n\t{\n\t\t\"123\"\n\t\t{\n\t\t\t\"UseSteamControllerConfig\"\t\t\"2\"\n\t\t}\n\t}\n";
+            Equal(LocalConfig.Substring(0, LocalConfig.Length - 2) + added + "}\n", result, "Text");
+            Equal("2", TextVdf.Get(result, path, "UseSteamControllerConfig"), "lesen");
+        });
+
+        Run("VDF-Text: vorhandener Wert wird ersetzt, weiterer ergänzt", () =>
+        {
+            string[] path = { "UserLocalConfigStore", "Software", "apps", "7" };
+            string replaced = TextVdf.Set(LocalConfig, path, "x", "9");
+            Equal(LocalConfig.Replace("\"x\"\t\t\"1\"", "\"x\"\t\t\"9\""), replaced, "ersetzt");
+            string added = TextVdf.Set(LocalConfig, path, "y", "5");
+            Equal(LocalConfig.Replace("\"x\"\t\t\"1\"\n", "\"x\"\t\t\"1\"\n\t\t\t\t\"y\"\t\t\"5\"\n"), added, "ergänzt");
+        });
+
+        Run("VDF-Text: Wert entfernen lässt den Rest gleich", () =>
+        {
+            string[] path = { "UserLocalConfigStore", "Software", "apps", "7" };
+            string added = TextVdf.Set(LocalConfig, path, "y", "5");
+            Equal(LocalConfig, TextVdf.Remove(added, path, "y"), "entfernt");
+            Equal(LocalConfig, TextVdf.Remove(LocalConfig, path, "gibtsnicht"), "nichts zu tun");
+        });
+
+        Run("VDF-Text: Windows-Zeilenenden bleiben erhalten", () =>
+        {
+            string crlf = LocalConfig.Replace("\n", "\r\n");
+            string result = TextVdf.Set(crlf, new[] { "UserLocalConfigStore", "apps", "1" }, "k", "v");
+            True(!result.Replace("\r\n", "").Contains("\n"), "nur CRLF");
+        });
+
+        Run("VDF-Text: beschädigter Text wird abgelehnt", () =>
+        {
+            string[] path = { "UserLocalConfigStore", "apps" };
+            Throws<InvalidDataException>(() => TextVdf.Set("\"UserLocalConfigStore\"\n{\n", path, "k", "v"));
+            Throws<InvalidDataException>(() => TextVdf.Set("\"UserLocalConfigStore\"\n{\n}\n}\n", path, "k", "v"));
+            Throws<InvalidDataException>(() => TextVdf.Set("\"UserLocalConfigStore\"\n{\n\t\"a\n}\n", path, "k", "v"));
+            Throws<InvalidDataException>(() => TextVdf.Set("\"Andere\"\n{\n}\n", path, "k", "v"));
+        });
+
+        Run("Steam: aktives Konto hat Vorrang, sonst das zuletzt genutzte", () =>
+        {
+            string login = "\"users\"\n{\n\t\"76561198000000001\"\n\t{\n\t\t\"MostRecent\"\t\t\"0\"\n\t}\n" +
+                           "\t\"76561198060265735\"\n\t{\n\t\t\"MostRecent\"\t\t\"1\"\n\t}\n}\n";
+            var dirs = new List<string> { "0", "39734273", "100000007" };
+            Equal("39734273", SteamLibrary.PickUser(39734273, login, dirs), "aktiv");
+            Equal("100000007", SteamLibrary.PickUser(0, login, dirs), "zuletzt genutzt");
+            Equal("100000007", SteamLibrary.PickUser(999, login, dirs), "aktives Konto ohne Ordner");
+            Equal("39734273", SteamLibrary.PickUser(0, null, new List<string> { "0", "39734273" }), "nur ein Konto");
+            Equal<string>(null, SteamLibrary.PickUser(0, null, dirs), "nicht eindeutig");
+        });
+
+        Run("Steam: FiveM einrichten und wieder entfernen, Fremdes bleibt", () =>
+        {
+            string dir = NewDir("steamlib");
+            string appDir = Path.Combine(dir, "FiveM", "FiveM.app");
+            Directory.CreateDirectory(appDir);
+            string exe = Path.Combine(dir, "FiveM", "FiveM.exe");
+            File.WriteAllText(exe, "x");
+            string shortcuts = Path.Combine(dir, "config", "shortcuts.vdf"), local = Path.Combine(dir, "config", "localconfig.vdf");
+            Directory.CreateDirectory(Path.GetDirectoryName(shortcuts));
+            File.WriteAllBytes(shortcuts, ShortcutFile(ForeignEntry()));
+            File.WriteAllText(local, LocalConfig, new UTF8Encoding(false));
+
+            Equal(false, SteamLibrary.ReadStatus(shortcuts, local).InSteam, "vorher");
+            SteamLibrary.AddFiveM(shortcuts, local, appDir);
+            SteamStatus s = SteamLibrary.ReadStatus(shortcuts, local);
+            True(s.InSteam && s.ControllerOn, "eingerichtet");
+            string appId = SteamShortcuts.ComputeAppId("\"" + exe + "\"", "FiveM").ToString();
+            Equal("2", TextVdf.Get(File.ReadAllText(local), new[] { "UserLocalConfigStore", "apps", appId }, "UseSteamControllerConfig"), "Controller");
+
+            SteamLibrary.AddFiveM(shortcuts, local, appDir);        // zweimal: kein doppelter Eintrag
+            List<SteamShortcut> list = SteamShortcuts.Parse(File.ReadAllBytes(shortcuts));
+            Equal(2, list.Count, "Einträge");
+            Equal("Mein Spiel", list[0].AppName, "fremdes Spiel");
+
+            SteamLibrary.RemoveFiveM(shortcuts, local);
+            Equal(false, SteamLibrary.ReadStatus(shortcuts, local).InSteam, "entfernt");
+            SameBytes(ShortcutFile(ForeignEntry()), File.ReadAllBytes(shortcuts), "fremdes Spiel unverändert");
+            Equal<string>(null, TextVdf.Get(File.ReadAllText(local), new[] { "UserLocalConfigStore", "apps", appId }, "UseSteamControllerConfig"), "Controller entfernt");
+        });
+
+        Run("Steam: ohne vorhandene shortcuts.vdf wird sie angelegt", () =>
+        {
+            string dir = NewDir("steamnew");
+            string appDir = Path.Combine(dir, "FiveM", "FiveM.app");
+            Directory.CreateDirectory(appDir);
+            File.WriteAllText(Path.Combine(dir, "FiveM", "FiveM.exe"), "x");
+            string shortcuts = Path.Combine(dir, "config", "shortcuts.vdf"), local = Path.Combine(dir, "config", "localconfig.vdf");
+            Directory.CreateDirectory(Path.GetDirectoryName(shortcuts));
+            File.WriteAllText(local, LocalConfig, new UTF8Encoding(false));
+            SteamLibrary.AddFiveM(shortcuts, local, appDir);
+            True(SteamLibrary.ReadStatus(shortcuts, local).ControllerOn, "eingerichtet");
+        });
+
+        Run("Steam: fehlende FiveM.exe oder kaputte Datei ändert nichts", () =>
+        {
+            string dir = NewDir("steamfail");
+            string appDir = Path.Combine(dir, "FiveM", "FiveM.app");
+            Directory.CreateDirectory(appDir);
+            string shortcuts = Path.Combine(dir, "shortcuts.vdf"), local = Path.Combine(dir, "localconfig.vdf");
+            File.WriteAllBytes(shortcuts, ShortcutFile(ForeignEntry()));
+            File.WriteAllText(local, LocalConfig, new UTF8Encoding(false));
+            Throws<FileNotFoundException>(() => SteamLibrary.AddFiveM(shortcuts, local, appDir));
+            Equal(LocalConfig, File.ReadAllText(local), "localconfig unverändert");
+
+            File.WriteAllText(Path.Combine(dir, "FiveM", "FiveM.exe"), "x");
+            File.WriteAllText(local, "\"UserLocalConfigStore\"\n{\n", new UTF8Encoding(false));
+            byte[] before = File.ReadAllBytes(shortcuts);
+            Throws<InvalidDataException>(() => SteamLibrary.AddFiveM(shortcuts, local, appDir));
+            SameBytes(before, File.ReadAllBytes(shortcuts), "shortcuts unverändert");
         });
     }
 

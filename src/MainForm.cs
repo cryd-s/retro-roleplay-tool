@@ -109,7 +109,7 @@ public class MainForm : Form
         {
             new[] { "CACHE CLEANER", "FiveM-Cache leeren, %TEMP% aufräumen, Stable-Kanal setzen", "" },
             new[] { "GTA-EINSTELLUNGEN", "Texture Budget, FXAA, VSync, Dichte, Distanz · mit Zurück-Funktion", "" },
-            new[] { "SONDERFUNKTIONEN", "TeamSpeak 3, SaltyChat und TS-Moved-nicht-Bugfix", "" },
+            new[] { "SONDERFUNKTIONEN", "TeamSpeak 3, SaltyChat, TS-Moved-nicht-Bugfix, FiveM in Steam", "" },
             new[] { "DISCORD BOTS", "Retro RP und Retro Business", "" },
         };
         int tileH = Theme.S(100), tileGlow = Theme.S(6);
@@ -603,6 +603,9 @@ public class MainForm : Form
     // ------------------------------------------------------------ Gemeinsam genutzt (auch von ExtrasPage)
 
     public bool Busy { get { return busy; } }
+
+    // null = FiveM nicht gefunden
+    public string FiveMAppDir { get { return fiveM.Found ? fiveM.AppDir : null; } }
 
     public void SetBusy(bool value)
     {

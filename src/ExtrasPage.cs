@@ -55,16 +55,18 @@ public class FeatureRow : NeonControl
     }
 }
 
-// Unterseite „Sonderfunktionen“: TeamSpeak 3, SaltyChat, TS-Moved-nicht-Bugfix.
+// Unterseite „Sonderfunktionen“: TeamSpeak 3, SaltyChat, TS-Moved-nicht-Bugfix, FiveM in Steam.
 public class ExtrasPage : Panel
 {
     readonly MainForm host;
-    readonly FeatureRow ts3Row, saltyRow, hostsRow;
+    readonly FeatureRow ts3Row, saltyRow, hostsRow, steamRow;
 
     Ts3Release ts3Latest;
     string saltyLatest;
     bool hostsActive;
     bool refreshing;
+    string steamDir, steamConfigDir;     // null = Steam oder Konto nicht gefunden
+    bool steamReady;                     // FiveM ist eingetragen und der Controller aktiv
 
     // top = wo der Inhalt beginnt (darüber liegt der Seitenkopf des Hauptfensters)
     public ExtrasPage(MainForm host, int margin, int inner, int top)
@@ -80,10 +82,13 @@ public class ExtrasPage : Panel
             "SaltyChat", "Installiert das aktuelle Plugin von saltyhub.net in TeamSpeak 3.");
         hostsRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
             "TS-Moved-nicht-Bugfix", "Leitet " + HostsFix.Host + " in der hosts-Datei auf 127.0.0.1 um.");
+        steamRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
+            "FiveM in Steam + Controller", "Trägt FiveM in die Steam-Bibliothek ein und aktiviert Steam Input.");
 
         ts3Row.Action.Click += async delegate { await Guard(InstallTs3Async); };
         saltyRow.Action.Click += async delegate { await Guard(InstallSaltyAsync); };
         hostsRow.Action.Click += async delegate { await Guard(ToggleHostsAsync); };
+        steamRow.Action.Click += async delegate { await Guard(ToggleSteamAsync); };
         ContentHeight = y + Theme.S(12);
     }
 
@@ -103,6 +108,7 @@ public class ExtrasPage : Panel
         ts3Row.Action.Enabled = enabled && !refreshing;
         saltyRow.Action.Enabled = enabled && !refreshing;
         hostsRow.Action.Enabled = enabled && !refreshing;
+        steamRow.Action.Enabled = enabled && !refreshing && steamConfigDir != null && (steamReady || host.FiveMAppDir != null);
     }
 
     // ------------------------------------------------------------ Status
@@ -112,7 +118,7 @@ public class ExtrasPage : Panel
         if (refreshing) return;
         refreshing = true;
         SetButtonsEnabled(!host.Busy);
-        foreach (FeatureRow r in new[] { ts3Row, saltyRow, hostsRow })
+        foreach (FeatureRow r in new[] { ts3Row, saltyRow, hostsRow, steamRow })
         {
             r.Value = "wird geprüft …";
             r.ValueColor = Theme.Muted;
@@ -125,6 +131,9 @@ public class ExtrasPage : Panel
         hostsRow.ValueColor = hostsActive ? Theme.Good : Theme.Pink;
         hostsRow.Action.Text = hostsActive ? "ENTFERNEN" : "AKTIVIEREN";
         hostsRow.Action.Primary = !hostsActive;
+
+        // Steam (lokal, schnell)
+        ShowSteamState();
 
         // TeamSpeak 3
         string ts3Installed = Ts3.InstalledVersion();
@@ -140,6 +149,52 @@ public class ExtrasPage : Panel
 
         refreshing = false;
         SetButtonsEnabled(!host.Busy);
+    }
+
+    void ShowSteamState()
+    {
+        steamReady = false;
+        steamRow.Action.Text = "EINRICHTEN";
+        steamRow.Action.Primary = true;
+        steamRow.ValueColor = Theme.Pink;
+        try
+        {
+            steamDir = SteamLibrary.SteamDir;
+            steamConfigDir = steamDir == null ? null : SteamLibrary.UserConfigDir(steamDir);
+            if (steamDir == null)
+            {
+                steamRow.Value = "Steam ist nicht installiert";
+                return;
+            }
+            if (steamConfigDir == null)
+            {
+                steamRow.Value = "kein Steam-Konto gefunden – bitte einmal in Steam anmelden";
+                return;
+            }
+            SteamStatus s = SteamLibrary.ReadStatus(Path.Combine(steamConfigDir, "shortcuts.vdf"),
+                                                    Path.Combine(steamConfigDir, "localconfig.vdf"));
+            steamReady = s.InSteam && s.ControllerOn;
+            if (steamReady)
+            {
+                steamRow.Value = "in Steam  ✔  Controller aktiv";
+                steamRow.ValueColor = Theme.Good;
+                steamRow.Action.Text = "ENTFERNEN";
+                steamRow.Action.Primary = false;
+            }
+            else if (host.FiveMAppDir == null)
+            {
+                steamRow.Value = "FiveM nicht gefunden – im Cache Cleaner auswählen";
+            }
+            else
+            {
+                steamRow.Value = s.InSteam ? "in Steam, Controller nicht aktiv" : "nicht in Steam";
+            }
+        }
+        catch (Exception ex)
+        {
+            steamConfigDir = null;
+            steamRow.Value = "Steam-Dateien nicht lesbar: " + ex.Message;
+        }
     }
 
     static void ShowVersionState(FeatureRow row, string installed, string latest, bool latestIsFallback)
@@ -314,6 +369,61 @@ public class ExtrasPage : Panel
             Downloader.TryDelete(vcFile);
             Downloader.TryDelete(pluginFile);
         }
+    }
+
+    async Task ToggleSteamAsync()
+    {
+        if (steamConfigDir == null) return;
+        bool remove = steamReady;
+        string restart = "Steam überschreibt diese Einstellungen beim Beenden. Deshalb wird Steam kurz geschlossen und " +
+                         "danach wieder gestartet. Laufende Downloads pausieren, ein laufendes Steam-Spiel bitte vorher beenden.";
+        string text = remove
+            ? "FiveM wird aus der Steam-Bibliothek entfernt, die Controller-Einstellung dafür ebenfalls.\n\n" + restart + "\n\nFortfahren?"
+            : "FiveM wird als Nicht-Steam-Spiel in die Steam-Bibliothek eingetragen und Steam Input dafür aktiviert.\n\n" +
+              restart + "\n\nDer aktuelle Stand wird vorher gespeichert. Fortfahren?";
+        if (!Confirm(text, "FiveM in Steam")) return;
+
+        string shortcuts = Path.Combine(steamConfigDir, "shortcuts.vdf");
+        string local = Path.Combine(steamConfigDir, "localconfig.vdf");
+        string dir = steamDir, appDir = host.FiveMAppDir;
+
+        host.SetBusy(true);
+        bool wasRunning = SteamLibrary.IsRunning();
+        if (wasRunning)
+        {
+            host.SetStatus("Steam wird geschlossen …", Theme.Text);
+            if (!await Task.Run(() => SteamLibrary.Shutdown(dir, 60000)))
+                throw new TimeoutException("Steam hat sich nicht schließen lassen. Es wurde nichts geändert. " +
+                                           "Läuft noch ein Steam-Spiel? Bitte beenden und noch einmal versuchen.");
+        }
+        try
+        {
+            host.SetStatus("Steam-Einstellungen werden geändert …", Theme.Text);
+            await Task.Run(() =>
+            {
+                GameConfigFiles.Snapshot(SteamLibrary.BackupDir, shortcuts, local);
+                if (remove) SteamLibrary.RemoveFiveM(shortcuts, local);
+                else SteamLibrary.AddFiveM(shortcuts, local, appDir);
+            });
+        }
+        finally
+        {
+            if (wasRunning) SteamLibrary.Start(dir);
+        }
+
+        if (remove)
+        {
+            host.SetStatus("Fertig!  FiveM wurde aus der Steam-Bibliothek entfernt.", Theme.Orange);
+            return;
+        }
+        host.SetStatus("Fertig!  FiveM steht in der Steam-Bibliothek, Steam Input ist aktiviert.", Theme.Orange);
+        MessageBox.Show(FindForm(),
+            "FiveM steht jetzt in deiner Steam-Bibliothek.\n\n" +
+            "Damit der Controller geht, FiveM ab jetzt über Steam starten.\n\n" +
+            "Reagiert der Controller im Spiel nicht: In Steam unter Einstellungen → Controller beim Desktop-Layout " +
+            "die Gamepad-Vorlage wählen.\n\nFiveM unterstützt Steam Input nicht offiziell, deshalb kann das je nach " +
+            "Controller unterschiedlich gut funktionieren.",
+            "FiveM in Steam", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     async Task ToggleHostsAsync()
