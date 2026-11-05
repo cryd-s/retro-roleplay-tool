@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="Retro Roleplay Tool: FiveM-Cache leeren, GTA-Grafik einstellen, TeamSpeak und SaltyChat installieren. Kostenlos für Windows 10 und 11.">
+<title>Retro Roleplay Tool</title>
+<style>
+  :root {
+    --bg: #0f0717;
+    --tile: #180c22;
+    --line: #341c46;
+    --orange: #ff8a1f;
+    --orange-dark: #e2540a;
+    --pink: #ff3fb4;
+    --text: #f8f4fc;
+    --muted: #a08cb2;
+    --ink: #1c0a1e;
+    --font: "Segoe UI", "Segoe UI Variable", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 400 16px/1.45 var(--font); }
+  a { color: var(--orange); }
+  :focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
+
+  .page { max-width: 760px; margin: 0 auto; }
+  .banner { display: block; width: 100%; height: auto; aspect-ratio: 3 / 1; object-fit: cover; background: #1c0d29; border-bottom: 3px solid var(--orange); }
+  main { padding: 0 24px; }
+
+  .get { padding: 28px 0 32px; }
+  h1 { margin: 0; font-size: 2rem; line-height: 1.15; font-weight: 700; }
+  .lead { margin: 8px 0 24px; max-width: 62ch; }
+
+  .download {
+    display: block; padding: 22px 24px; border-radius: 12px; text-align: center; text-decoration: none;
+    background: linear-gradient(var(--orange), var(--orange-dark)); color: var(--ink);
+    font-size: 1.3rem; font-weight: 700; letter-spacing: .01em;
+    box-shadow: 0 0 0 4px rgba(255, 138, 31, .16), 0 0 0 8px rgba(255, 138, 31, .07);
+    transition: box-shadow .15s ease, filter .15s ease;
+  }
+  .download:hover { filter: brightness(1.1); box-shadow: 0 0 0 5px rgba(255, 138, 31, .28), 0 0 0 11px rgba(255, 138, 31, .12); }
+  .download:active { filter: brightness(.88); }
+  .meta { margin: 18px 0 0; color: var(--muted); font-size: .94rem; text-align: center; }
+
+  .warning { margin: 0 0 32px; padding: 14px 0 14px 16px; border-left: 3px solid var(--pink); }
+  .warning strong { display: block; color: var(--pink); font-weight: 600; }
+
+  h2 { margin: 0 0 14px; color: var(--orange); font-size: .94rem; font-weight: 700; }
+  .tiles { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+  .tile {
+    display: flex; align-items: center; gap: 20px; padding: 16px 20px;
+    background: var(--tile); border: 2px solid var(--pink); border-radius: 14px;
+    box-shadow: 0 0 0 3px rgba(255, 63, 180, .07);
+  }
+  .icon {
+    flex: none; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--pink), var(--orange)); color: var(--ink);
+  }
+  .icon svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .tile h3 { margin: 0 0 2px; font-size: 1.2rem; line-height: 1.25; font-weight: 700; }
+  .tile p { margin: 0; color: var(--muted); font-size: .94rem; }
+
+  footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 20px; padding: 24px; color: var(--muted); font-size: .85rem; }
+
+  @media (max-width: 520px) {
+    main { padding: 0 16px; }
+    footer { padding: 24px 16px; }
+    h1 { font-size: 1.7rem; }
+    .download { font-size: 1.15rem; }
+    .tile { gap: 14px; padding: 14px; }
+    .icon { width: 44px; height: 44px; }
+    .icon svg { width: 22px; height: 22px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .download { transition: none; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <img class="banner" src="https://raw.githubusercontent.com/cryd-s/retro-roleplay-tool/main/assets/banner.png" alt="Retro Roleplay Tool by RR | Manu" width="1536" height="512">
+
+  <main>
+    <section class="get">
+      <h1>Retro Roleplay Tool</h1>
+      <p class="lead">Räumt FiveM auf, stellt die GTA-Grafik für FiveM ein und installiert TeamSpeak 3 und SaltyChat mit einem Klick.</p>
+      <a class="download" href="https://github.com/cryd-s/retro-roleplay-tool/releases/latest/download/RetroRoleplayTool.zip">ZIP HERUNTERLADEN</a>
+      <p class="meta"><span id="version">Immer die neueste Version.</span> Für Windows 10 und 11, keine Installation nötig.</p>
+    </section>
+
+    <p class="warning">
+      <strong>Windows warnt beim ersten Start?</strong>
+      Klicke auf „Weitere Informationen“ und dann auf „Trotzdem ausführen“. Die Warnung kommt, weil das Programm nicht digital signiert ist. Die Anleitung mit Bildern liegt in der ZIP.
+    </p>
+
+    <section>
+      <h2>ÜBERSICHT</h2>
+      <ul class="tiles">
+        <li class="tile">
+          <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6.5 7l1 13h9l1-13M10 11v5M14 11v5"/></svg></span>
+          <div>
+            <h3>CACHE CLEANER</h3>
+            <p>Leert den FiveM-Cache, auf Wunsch auch %TEMP% und den Grafik-Shader-Cache, und setzt FiveM auf den Stable-Kanal.</p>
+          </div>
+        </li>
+        <li class="tile">
+          <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></span>
+          <div>
+            <h3>GTA-EINSTELLUNGEN</h3>
+            <p>Prüft und setzt Texture Budget, FXAA, MSAA, VSync, Dichte, Vielfalt und Distanz für FiveM. Du kannst jederzeit einen Schritt zurück.</p>
+          </div>
+        </li>
+        <li class="tile">
+          <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7a5 5 0 0 1-7 5l-7.5 7.5a1.8 1.8 0 0 1-2.5-2.5L10.5 9.500a5 5 0 0 1 6-6.300L13.500 6.300l.7 2.800 2.800.7L20 7z"/></svg></span>
+          <div>
+            <h3>SONDERFUNKTIONEN</h3>
+            <p>Installiert TeamSpeak 3 und SaltyChat, schaltet TeamSpeak-Töne ab, behebt den TS-Moved-nicht-Fehler und zeigt Grafik-Mods an. FiveM lässt sich auch mit Controller in Steam eintragen, das ist aber noch nicht mit echtem Steam getestet.</p>
+          </div>
+        </li>
+        <li class="tile">
+          <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H10l-5 4v-4H4z"/></svg></span>
+          <div>
+            <h3>DISCORD BOTS</h3>
+            <p>Führt zu Retro RP, dem Bot für Familien-Discords, und Retro Business, dem Bot für Business.</p>
+          </div>
+        </li>
+        <li class="tile">
+          <span class="icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.700 0l3-3a4 4 0 0 0-5.700-5.700l-1 1M14 10a4 4 0 0 0-5.700 0l-3 3a4 4 0 0 0 5.700 5.700l1-1"/></svg></span>
+          <div>
+            <h3>LINKS ZU RETRO</h3>
+            <p>UCP, Regelwerk, Discord und Entbannungsdiscord.</p>
+          </div>
+        </li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <span>Neue Versionen zeigt dir das Tool beim Start an.</span>
+    <span><a href="https://github.com/cryd-s/retro-roleplay-tool">Quellcode auf GitHub</a> by RR | Manu</span>
+  </footer>
+</div>
+
+<script>
+  // Zeigt die Versionsnummer an. Klappt das nicht, bleibt der allgemeine Text stehen; der Download funktioniert immer.
+  fetch('https://api.github.com/repos/cryd-s/retro-roleplay-tool/releases/latest')
+    .then(function (response) { return response.ok ? response.json() : null; })
+    .then(function (release) {
+      if (release && /^v\d+\.\d+\.\d+$/.test(release.tag_name))
+        document.getElementById('version').textContent = 'Neueste Version: ' + release.tag_name + '.';
+    })
+    .catch(function () {});
+</script>
+</body>
+</html>
