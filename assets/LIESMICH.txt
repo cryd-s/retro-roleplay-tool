@@ -8,6 +8,7 @@ So geht's:
 Windows meldet "Der Computer wurde durch Windows geschuetzt"?
 -> Auf "Weitere Informationen" und dann "Trotzdem ausfuehren" klicken.
    Das kommt nur, weil das Programm nicht digital signiert ist.
+   Die Schritte mit Bildern stehen in der Datei Anleitung.pdf in dieser ZIP.
 
 Neueste Version und Infos:
 https://github.com/cryd-s/retro-roleplay-tool

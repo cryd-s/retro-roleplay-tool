@@ -14,6 +14,7 @@ Alle Versionen (auch die exe einzeln) findest du unter [Releases](https://github
 
 > Windows zeigt beim ersten Start eventuell „Der Computer wurde durch Windows geschützt“ an, weil das Programm
 > nicht digital signiert ist. Dann auf **Weitere Informationen → Trotzdem ausführen** klicken.
+> Die Schritte mit Bildern stehen in der `Anleitung.pdf` in der ZIP.
 
 ## Funktionen
 

@@ -77,11 +77,11 @@ $release = Invoke-RestMethod -Method Post -Uri "https://api.github.com/repos/$re
     -ContentType 'application/json; charset=utf-8' `
     -Body ([Text.Encoding]::UTF8.GetBytes((@{ tag_name = $tag; name = "Retro Roleplay Tool $tag"; body = $body.Trim() } | ConvertTo-Json)))
 
-# ZIP (exe + LIESMICH.txt): Browser warnen bei ZIP-Downloads seltener als bei einer einzelnen exe.
+# ZIP (exe + LIESMICH.txt + Anleitung.pdf): Browser warnen bei ZIP-Downloads seltener als bei einer einzelnen exe.
 $exe = Join-Path $root 'bin\RetroRoleplayTool.exe'
 $zip = Join-Path $root 'bin\RetroRoleplayTool.zip'
 if (Test-Path $zip) { Remove-Item $zip }
-Compress-Archive -Path $exe, (Join-Path $root 'assets\LIESMICH.txt') -DestinationPath $zip
+Compress-Archive -Path $exe, (Join-Path $root 'assets\LIESMICH.txt'), (Join-Path $root 'assets\Anleitung.pdf') -DestinationPath $zip
 
 foreach ($asset in @(@{ File = $zip; Name = 'RetroRoleplayTool.zip'; Type = 'application/zip' },
                      @{ File = $exe; Name = 'RetroRoleplayTool.exe'; Type = 'application/octet-stream' })) {

@@ -1,0 +1,39 @@
+<!doctype html>
+<!-- Vorlage für assets\Anleitung.pdf. Nach einer Änderung neu erzeugen:
+     powershell -ExecutionPolicy Bypass -File tools\make-anleitung.ps1 -->
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Retro Roleplay Tool: Anleitung zum ersten Start</title>
+<style>
+  @page { size: A4; margin: 14mm 18mm; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: #1c1024; font-size: 11.5pt; line-height: 1.4; }
+  h1 { margin: 0; font-size: 21pt; line-height: 1.2; }
+  .brand { margin: 0 0 1mm; color: #e2540a; font-size: 10pt; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .intro { margin: 2mm 0 6mm; padding-bottom: 4mm; border-bottom: .6mm solid #ff8a1f; }
+  .step { break-inside: avoid; margin-bottom: 5mm; }
+  .step h2 { display: flex; align-items: center; gap: 3mm; margin: 0 0 2.5mm; font-size: 14pt; }
+  .num { display: inline-block; width: 8mm; height: 8mm; border-radius: 50%; background: #ff8a1f; color: #1c1024; font-size: 12pt; line-height: 8mm; text-align: center; }
+  .step img { display: block; width: 92mm; margin-left: 11mm; border: .25mm solid #c9c2d0; }
+  .note { margin: 0; color: #5d4f69; font-size: 10pt; }
+</style>
+</head>
+<body>
+  <p class="brand">Retro Roleplay Tool</p>
+  <h1>Windows zeigt beim ersten Start eine Warnung?</h1>
+  <p class="intro">Das Programm ist nicht digital signiert, deshalb meldet sich Windows. So startest du es trotzdem:</p>
+
+  <div class="step">
+    <h2><span class="num">1</span>Auf „Weitere Informationen“ klicken</h2>
+    <img src="../assets/anleitung-schritt1.png" alt="Windows-Warnung, der Pfeil zeigt auf den Link Weitere Informationen">
+  </div>
+
+  <div class="step">
+    <h2><span class="num">2</span>Auf „Trotzdem ausführen“ klicken</h2>
+    <img src="../assets/anleitung-schritt2.png" alt="Windows-Warnung, der Pfeil zeigt auf den Knopf Trotzdem ausführen">
+  </div>
+
+  <p class="note">Danach startet das Tool. Die aktuelle Version gibt es nur unter github.com/cryd-s/retro-roleplay-tool.</p>
+</body>
+</html>
