@@ -26,6 +26,7 @@ public class MainForm : Form
     List<CleanTarget> normalTargets;     // Normaler Cache Clear
     List<CleanTarget> fullTargets;       // Gesamter Cache Clear (normal + game-storage, nui-storage)
     readonly CleanTarget tempTarget;
+    readonly List<CleanTarget> shaderTargets;
     string iniPath;                      // null, wenn FiveM nicht gefunden wurde
     FeatureRow installRow;
 
@@ -35,7 +36,7 @@ public class MainForm : Form
 
     bool fullMode;
     ModeCard cardNormal, cardFull;
-    TargetRow tempRow, iniRow;
+    TargetRow tempRow, shaderRow, iniRow;
     NeonButton btnMeasure, btnClean;
     NeonProgressBar bar;
     Label status;
@@ -57,6 +58,7 @@ public class MainForm : Form
     public MainForm()
     {
         tempTarget = CleanTargets.Temp(Path.GetTempPath());
+        shaderTargets = CleanTargets.Shaders(localAppData);
         SetLocation(FiveMLocator.Locate(localAppData, settings.Get(SettingKey)));
 
         Text = "Retro Roleplay Tool · by RR | Manu";
@@ -110,9 +112,9 @@ public class MainForm : Form
         oy += Theme.S(28);
         var tileDefs = new[]
         {
-            new[] { "CACHE CLEANER", "FiveM-Cache leeren, %TEMP% aufräumen, Stable-Kanal setzen", "" },
+            new[] { "CACHE CLEANER", "FiveM-Cache, Shader-Cache und %TEMP% leeren, Stable-Kanal setzen", "" },
             new[] { "GTA-EINSTELLUNGEN", "Texture Budget, FXAA, VSync, Dichte, Distanz · mit Zurück-Funktion", "" },
-            new[] { "SONDERFUNKTIONEN", "TeamSpeak 3, SaltyChat, TS-Moved-nicht-Bugfix, FiveM in Steam", "" },
+            new[] { "SONDERFUNKTIONEN", "TeamSpeak 3, SaltyChat, TS-Moved-nicht-Bugfix, FiveM in Steam, Grafik-Mods", "" },
             new[] { "DISCORD BOTS", "Retro RP und Retro Business", "" },
             new[] { "LINKS ZU RETRO", "UCP, Regelwerk, Discord, Entbannungsdiscord", "" },
         };
@@ -177,8 +179,10 @@ public class MainForm : Form
         mainPage.Controls.Add(Heading("ZUSÄTZLICH", m, y, inner));
         y += Theme.S(22);
         int rowHeight = Theme.S(52);
-        tempRow = AddRow(tempTarget.Name, tempTarget.Path, m, ref y, inner, rowHeight);
-        iniRow = AddRow("FiveM-Kanal auf Stable setzen", iniPath ?? "", m, ref y, inner, rowHeight);
+        tempRow = AddRow(tempTarget.Name, tempTarget.Path, true, m, ref y, inner, rowHeight);
+        shaderRow = AddRow("Grafik-Shader-Cache", "NVIDIA, AMD, Intel, Windows · bei Hängern und Grafikfehlern · nächster Start dauert länger",
+            false, m, ref y, inner, rowHeight);
+        iniRow = AddRow("FiveM-Kanal auf Stable setzen", iniPath ?? "", true, m, ref y, inner, rowHeight);
         y += Theme.S(16);
 
         // --- Buttons
@@ -337,7 +341,7 @@ public class MainForm : Form
             string app = FiveMLocator.NormalizeAppDir(dlg.FileName);
             if (app == null)
             {
-                MessageBox.Show(this, "Das ist keine FiveM-Installation.\n\n" +
+                NeonDialog.Show(this, "Das ist keine FiveM-Installation.\n\n" +
                     "Bitte die Datei FiveM.exe im FiveM-Ordner auswählen (dort liegt auch der Ordner FiveM.app).",
                     "FiveM nicht erkannt", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
@@ -372,9 +376,9 @@ public class MainForm : Form
         page.Controls.Add(new Panel { BackColor = Theme.Line, Bounds = new Rectangle(m, top + h + Theme.S(7), inner, 1) });
     }
 
-    TargetRow AddRow(string title, string subtitle, int x, ref int y, int w, int h)
+    TargetRow AddRow(string title, string subtitle, bool isChecked, int x, ref int y, int w, int h)
     {
-        var row = new TargetRow { Title = title, Subtitle = subtitle, Value = "…", Bounds = new Rectangle(x, y, w, h) };
+        var row = new TargetRow { Title = title, Subtitle = subtitle, Value = "…", Checked = isChecked, Bounds = new Rectangle(x, y, w, h) };
         row.CheckedChanged += delegate { ShowSelectionTotal(); };
         mainPage.Controls.Add(row);
         y += h;
@@ -415,6 +419,7 @@ public class MainForm : Form
     {
         foreach (CleanTarget t in fullTargets) yield return t;   // enthält alle normalen
         yield return tempTarget;
+        foreach (CleanTarget t in shaderTargets) yield return t;
     }
 
     async Task MeasureAllAsync()
@@ -441,6 +446,7 @@ public class MainForm : Form
     IEnumerable<TargetRow> Rows()
     {
         yield return tempRow;
+        yield return shaderRow;
     }
 
     long Sum(IEnumerable<CleanTarget> list)
@@ -478,6 +484,7 @@ public class MainForm : Form
         if (fiveM.Found && Measured(fullTargets))
             cardFull.Value = AnyExists(fullTargets) ? SizeFormat.Format(Sum(fullTargets)) : "nicht gefunden";
         ShowRowSize(tempRow, new List<CleanTarget> { tempTarget });
+        ShowRowSize(shaderRow, shaderTargets);
     }
 
     void ShowRowSize(TargetRow row, List<CleanTarget> list)
@@ -514,6 +521,7 @@ public class MainForm : Form
     {
         var list = new List<CleanTarget>(fullMode ? fullTargets : normalTargets);
         if (tempRow.Checked) list.Add(tempTarget);
+        if (shaderRow.Checked) list.AddRange(shaderTargets);
         return list.FindAll(t => { bool e; return exists.TryGetValue(t.Path, out e) && e; });
     }
 
@@ -540,7 +548,7 @@ public class MainForm : Form
 
         if (FiveMProcess.IsRunning())
         {
-            DialogResult answer = MessageBox.Show(this,
+            DialogResult answer = NeonDialog.Show(this,
                 "FiveM läuft gerade.\n\n" +
                 "Ja = FiveM jetzt beenden und dann bereinigen\n" +
                 "Nein = trotzdem bereinigen (gesperrte Dateien werden übersprungen)\n" +
@@ -570,14 +578,15 @@ public class MainForm : Form
         if (full) msg.Append("\nDen gesamten Cache Clear nur nutzen, wenn der normale Clear nicht hilft.\n" +
                              "\n⚠  Hinweis: game-storage enthält dein FiveM-Profil.\n" +
                              "Nach dem Bereinigen musst du in FiveM deinen Namen wieder eintragen.\n");
+        if (shaderRow.Checked) msg.Append("\nDer Shader-Cache gilt auch für andere Spiele. Beim nächsten Start bauen sie ihn neu auf, das dauert einmalig länger.\n");
         if (selected.Count == 0 && !doIni)
         {
-            MessageBox.Show(this, msg.ToString(), "Nichts zu tun", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            NeonDialog.Show(this, msg.ToString(), "Nichts zu tun", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         msg.Append("\nInsgesamt ca. " + SizeFormat.Format(total) + ". Fortfahren?");
 
-        if (MessageBox.Show(this, msg.ToString(), "Bereinigen bestätigen",
+        if (NeonDialog.Show(this, msg.ToString(), "Bereinigen bestätigen",
                 MessageBoxButtons.YesNo, full ? MessageBoxIcon.Warning : MessageBoxIcon.Question) != DialogResult.Yes)
             return;
 
@@ -626,6 +635,7 @@ public class MainForm : Form
         bar.Value = 1000;
         SetBusy(false);
         SetMode(false);          // Standard ist immer der normale Cache Clear
+        shaderRow.Checked = false;
         await MeasureAllAsync();
 
         SetStatus("Fertig!  " + SizeFormat.Format(freed) + " freigegeben  ·  " +
@@ -634,9 +644,9 @@ public class MainForm : Form
                   "\n" + iniText + (full ? "  ·  ⚠ FiveM-Name neu setzen!" : ""), Theme.Orange);
 
         if (errors.Count > 0)
-            MessageBox.Show(this, string.Join("\n", errors), "Hinweise", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            NeonDialog.Show(this, string.Join("\n", errors), "Hinweise", MessageBoxButtons.OK, MessageBoxIcon.Information);
         if (full)
-            MessageBox.Show(this, "Gesamter Cache Clear ist fertig.\n\n" +
+            NeonDialog.Show(this, "Gesamter Cache Clear ist fertig.\n\n" +
                 "Wichtig: Beim nächsten Start von FiveM musst du deinen FiveM-Namen wieder eintragen.",
                 "FiveM-Name neu setzen", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
@@ -706,6 +716,7 @@ public class MainForm : Form
         if (index == 1)
         {
             SetMode(false);      // Standard ist immer der normale Cache Clear
+            shaderRow.Checked = false;
             // Größen erst messen, wenn der Cleaner das erste Mal geöffnet wird
             if (!measuredOnce) { measuredOnce = true; var ignored = MeasureAllAsync(); }
             else ShowSelectionTotal();
@@ -717,7 +728,7 @@ public class MainForm : Form
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         if (busy &&
-            MessageBox.Show(this, "Es läuft gerade noch ein Vorgang. Trotzdem schließen?", "Retro Roleplay Tool",
+            NeonDialog.Show(this, "Es läuft gerade noch ein Vorgang. Trotzdem schließen?", "Retro Roleplay Tool",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
             e.Cancel = true;
         base.OnFormClosing(e);

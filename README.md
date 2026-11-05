@@ -42,6 +42,14 @@ Alle Versionen (auch die exe einzeln) findest du unter [Releases](https://github
   - Steam wird dafür normal geschlossen und danach wieder gestartet; vorher wird der aktuelle Stand gespeichert
   - **Noch nicht mit echtem Steam getestet.** FiveM unterstützt Steam Input nicht offiziell, der Controller funktioniert also vielleicht nicht in jedem Fall
 
+**Grafik-Shader-Cache (im Cache Cleaner, Option)**
+- Leert bei Hängern und Grafikfehlern den Shader-Cache von NVIDIA, AMD, Intel und Windows
+- Standardmäßig aus; gilt auch für andere Spiele, der nächste Start dauert einmalig länger
+
+**Grafik-Mods prüfen (unter Sonderfunktionen)**
+- Zeigt ReShade, ASI-Plugins, fremde DLLs und Mods im GTA-Ordner und bei FiveM
+- Ändert nichts, hilft nur bei der Suche nach Absturzursachen
+
 **Links zu Retro**
 - [UCP](https://retro-roleplay.ch/portal)
 - [Regelwerk](https://retro-roleplay.ch/regelwerk)

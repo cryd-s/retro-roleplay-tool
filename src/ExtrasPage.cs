@@ -55,11 +55,12 @@ public class FeatureRow : NeonControl
     }
 }
 
-// Unterseite „Sonderfunktionen“: TeamSpeak 3, SaltyChat, TS-Moved-nicht-Bugfix, FiveM in Steam.
+// Unterseite „Sonderfunktionen“: TeamSpeak 3, SaltyChat, TS-Moved-nicht-Bugfix, FiveM in Steam, Grafik-Mods.
 public class ExtrasPage : Panel
 {
     readonly MainForm host;
-    readonly FeatureRow ts3Row, saltyRow, hostsRow, steamRow;
+    readonly FeatureRow ts3Row, saltyRow, hostsRow, steamRow, modRow;
+    ModReport modReport;                 // null = FiveM nicht gefunden oder nicht lesbar
 
     Ts3Release ts3Latest;
     string saltyLatest;
@@ -84,11 +85,16 @@ public class ExtrasPage : Panel
             "TS-Moved-nicht-Bugfix", "Leitet " + HostsFix.Host + " in der hosts-Datei auf 127.0.0.1 um.");
         steamRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
             "FiveM in Steam + Controller", "Trägt FiveM in die Steam-Bibliothek ein und aktiviert Steam Input.");
+        modRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
+            "Grafik-Mods prüfen", "Zeigt ReShade, ASI-Plugins, fremde DLLs und Mods. Ändert nichts.");
+        modRow.Action.Text = "DETAILS";
+        modRow.Action.Primary = false;
 
         ts3Row.Action.Click += async delegate { await Guard(InstallTs3Async); };
         saltyRow.Action.Click += async delegate { await Guard(InstallSaltyAsync); };
         hostsRow.Action.Click += async delegate { await Guard(ToggleHostsAsync); };
         steamRow.Action.Click += async delegate { await Guard(ToggleSteamAsync); };
+        modRow.Action.Click += delegate { ShowModDetails(); };
         ContentHeight = y + Theme.S(12);
     }
 
@@ -109,6 +115,7 @@ public class ExtrasPage : Panel
         saltyRow.Action.Enabled = enabled && !refreshing;
         hostsRow.Action.Enabled = enabled && !refreshing;
         steamRow.Action.Enabled = enabled && !refreshing && steamConfigDir != null && (steamReady || host.FiveMAppDir != null);
+        modRow.Action.Enabled = enabled && !refreshing && modReport != null;
     }
 
     // ------------------------------------------------------------ Status
@@ -118,7 +125,7 @@ public class ExtrasPage : Panel
         if (refreshing) return;
         refreshing = true;
         SetButtonsEnabled(!host.Busy);
-        foreach (FeatureRow r in new[] { ts3Row, saltyRow, hostsRow, steamRow })
+        foreach (FeatureRow r in new[] { ts3Row, saltyRow, hostsRow, steamRow, modRow })
         {
             r.Value = "wird geprüft …";
             r.ValueColor = Theme.Muted;
@@ -134,6 +141,9 @@ public class ExtrasPage : Panel
 
         // Steam (lokal, schnell)
         ShowSteamState();
+
+        // Grafik-Mods (lokal, schnell)
+        ShowModState();
 
         // TeamSpeak 3
         string ts3Installed = Ts3.InstalledVersion();
@@ -197,6 +207,72 @@ public class ExtrasPage : Panel
         }
     }
 
+    void ShowModState()
+    {
+        modReport = null;
+        modRow.ValueColor = Theme.Muted;
+        string app = host.FiveMAppDir;
+        if (app == null)
+        {
+            modRow.Value = "FiveM nicht gefunden – im Cache Cleaner auswählen";
+            return;
+        }
+        try
+        {
+            string ini = CleanTargets.IniPath(app);
+            modReport = ModCheck.Scan(app, File.Exists(ini) ? FiveMIni.GetGamePath(FiveMIni.ReadText(ini)) : null);
+        }
+        catch (Exception ex)
+        {
+            modRow.Value = "nicht lesbar: " + ex.Message;
+            return;
+        }
+        if (modReport.Total == 0)
+        {
+            modRow.Value = modReport.GtaDir == null ? "nichts gefunden  ·  GTA-Ordner unbekannt" : "nichts gefunden  ✔";
+            modRow.ValueColor = modReport.GtaDir == null ? Theme.Muted : Theme.Good;
+        }
+        else
+        {
+            modRow.Value = modReport.Total + (modReport.Total == 1 ? " Datei" : " Dateien") + " gefunden";
+            modRow.ValueColor = Theme.Orange;
+        }
+    }
+
+    void ShowModDetails()
+    {
+        if (modReport == null) return;
+        string app = host.FiveMAppDir;
+        var text = new System.Text.StringBuilder();
+        if (modReport.Total == 0)
+        {
+            text.Append("Es wurden keine ReShade-Dateien, ASI-Plugins, fremden DLLs oder Mods gefunden.\n");
+        }
+        else
+        {
+            text.Append("Diese Dateien klinken sich in das Spiel ein. Das ist nicht automatisch ein Fehler, sie können aber Abstürze und Grafikfehler auslösen.\n");
+            AppendFiles(text, "GTA-Ordner", modReport.GtaDir, modReport.GtaFiles);
+            AppendFiles(text, "FiveM-Plugins", Path.Combine(app, "plugins"), modReport.PluginFiles);
+            if (modReport.ModFileCount > 0)
+                text.Append("\nFiveM-Mods (" + Path.Combine(app, "mods") + ")\n•  " + modReport.ModFileCount +
+                            (modReport.ModFileCount == 1 ? " Datei" : " Dateien") + "\n");
+            text.Append("\nZum Testen: FiveM schließen, die Dateien in einen anderen Ordner verschieben und FiveM starten. " +
+                        "Ist der Fehler weg, lag es daran. Das Tool selbst ändert daran nichts.\n");
+        }
+        if (modReport.GtaDir == null)
+            text.Append("\nDer GTA-Ordner steht nicht in der CitizenFX.ini oder existiert nicht, deshalb wurde er nicht geprüft.\n");
+        NeonDialog.Show(host, text.ToString(), "Grafik-Mods", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    static void AppendFiles(System.Text.StringBuilder text, string title, string dir, System.Collections.Generic.List<string> files)
+    {
+        const int MaxShown = 12;
+        if (files.Count == 0) return;
+        text.Append("\n" + title + " (" + dir + ")\n");
+        for (int i = 0; i < files.Count && i < MaxShown; i++) text.Append("•  " + files[i] + "\n");
+        if (files.Count > MaxShown) text.Append("•  … und " + (files.Count - MaxShown) + " weitere\n");
+    }
+
     static void ShowVersionState(FeatureRow row, string installed, string latest, bool latestIsFallback)
     {
         string latestText = latest == null ? "aktuelle Version nicht abrufbar"
@@ -249,7 +325,7 @@ public class ExtrasPage : Panel
             else
             {
                 host.SetStatus("Fehler: " + ex.Message, Theme.Pink);
-                MessageBox.Show(FindForm(), ex.Message, "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                NeonDialog.Show(FindForm(), ex.Message, "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
         finally
@@ -261,7 +337,7 @@ public class ExtrasPage : Panel
 
     bool Confirm(string text, string caption)
     {
-        return MessageBox.Show(FindForm(), text, caption, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+        return NeonDialog.Show(FindForm(), text, caption, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
     }
 
     // TeamSpeak muss für Installationen geschlossen sein.
@@ -417,7 +493,7 @@ public class ExtrasPage : Panel
             return;
         }
         host.SetStatus("Fertig!  FiveM steht in der Steam-Bibliothek, Steam Input ist aktiviert.", Theme.Orange);
-        MessageBox.Show(FindForm(),
+        NeonDialog.Show(FindForm(),
             "FiveM steht jetzt in deiner Steam-Bibliothek.\n\n" +
             "Damit der Controller geht, FiveM ab jetzt über Steam starten.\n\n" +
             "Reagiert der Controller im Spiel nicht: In Steam unter Einstellungen → Controller beim Desktop-Layout " +

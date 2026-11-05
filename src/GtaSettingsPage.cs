@@ -241,7 +241,7 @@ public class GtaSettingsPage : Panel
         catch (Exception ex)
         {
             host.SetStatus("Fehler: " + ex.Message, Theme.Pink);
-            MessageBox.Show(FindForm(), ex.Message, "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            NeonDialog.Show(FindForm(), ex.Message, "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
         {
@@ -252,14 +252,14 @@ public class GtaSettingsPage : Panel
 
     bool Confirm(string text, string caption)
     {
-        return MessageBox.Show(FindForm(), text, caption, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
+        return NeonDialog.Show(FindForm(), text, caption, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
     }
 
     // FiveM speichert seine Einstellungen beim Beenden und würde Änderungen sonst überschreiben.
     async Task<bool> EnsureFiveMClosedAsync()
     {
         if (!FiveMProcess.IsRunning()) return true;
-        if (MessageBox.Show(FindForm(),
+        if (NeonDialog.Show(FindForm(),
                 "FiveM läuft gerade. FiveM speichert seine Einstellungen beim Beenden und würde die Änderung " +
                 "wieder überschreiben.\n\nFiveM jetzt schließen?", "FiveM läuft",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)

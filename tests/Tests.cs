@@ -28,6 +28,7 @@ static class Tests
             GtaSettingsTests();
             SteamTests();
             UpdateTests();
+            ModCheckTests();
             DownloadTests();
         }
         finally
@@ -838,6 +839,73 @@ static class Tests
     static void SameBytes(byte[] expected, byte[] actual, string what)
     {
         Equal(BitConverter.ToString(expected), BitConverter.ToString(actual), what);
+    }
+
+    static void ModCheckTests()
+    {
+        Run("Shader-Cache: nur die bekannten Ordner, nie der ganze AppData-Ordner", () =>
+        {
+            var targets = CleanTargets.Shaders(@"C:\L");
+            var paths = new List<string>();
+            foreach (CleanTarget t in targets) paths.Add(t.Path);
+            Equal(@"C:\L\NVIDIA\DXCache|C:\L\AMD\DxCache|C:\L\AMD\DxcCache|C:\L\Intel\ShaderCache|C:\L\D3DSCache",
+                  string.Join("|", paths), "Pfade");
+        });
+
+        Run("FiveM-Ini: GTA-Ordner wird gelesen", () =>
+        {
+            Equal(@"C:\Games\GTA V", FiveMIni.GetGamePath("[Game]\r\nIVPath=C:\\Games\\GTA V\r\nUpdateChannel=production\r\n"), "Pfad");
+            Equal<string>(null, FiveMIni.GetGamePath("[Game]\r\nUpdateChannel=production\r\n"), "nicht eingetragen");
+            Equal<string>(null, FiveMIni.GetGamePath("[Game]\r\nIVPath=\r\n"), "leer");
+            Equal<string>(null, FiveMIni.GetGamePath("[Addons]\r\nIVPath=C:\\Falsch\r\n"), "anderer Abschnitt");
+        });
+
+        Run("FiveM-Ini: Lesen kommt mit BOM und ANSI zurecht", () =>
+        {
+            string dir = NewDir("modini");
+            string file = Path.Combine(dir, "CitizenFX.ini");
+            File.WriteAllText(file, "[Game]\r\nIVPath=C:\\Spiele Müller\\GTA\r\n", new UTF8Encoding(true));
+            Equal(@"C:\Spiele Müller\GTA", FiveMIni.GetGamePath(FiveMIni.ReadText(file)), "UTF-8 mit BOM");
+            File.WriteAllText(file, "[Game]\r\nIVPath=C:\\Spiele Müller\\GTA\r\n", Encoding.Default);
+            Equal(@"C:\Spiele Müller\GTA", FiveMIni.GetGamePath(FiveMIni.ReadText(file)), "ANSI");
+        });
+
+        Run("Grafik-Mods: findet Eingeklinktes, Original-Dateien bleiben außen vor", () =>
+        {
+            string dir = NewDir("modcheck");
+            string gta = Path.Combine(dir, "GTA");
+            string app = Path.Combine(dir, "FiveM.app");
+            string plugins = Path.Combine(app, "plugins");
+            string mods = Path.Combine(app, "mods");
+            Directory.CreateDirectory(gta);
+            Directory.CreateDirectory(Path.Combine(plugins, "reshade-shaders"));
+            Directory.CreateDirectory(Path.Combine(mods, "sub"));
+            foreach (string f in new[] { "D3D11.dll", "dinput8.dll", "Trainer.asi", "d3dcompiler_46.dll", "bink2w64.dll", "GTA5.exe", "x.ini" })
+                File.WriteAllText(Path.Combine(gta, f), "");
+            foreach (string f in new[] { "dxgi.dll", "NVE.asi", "Toggler.addon64", "ReShade.ini", "NVE.bin" })
+                File.WriteAllText(Path.Combine(plugins, f), "");
+            File.WriteAllText(Path.Combine(plugins, "reshade-shaders", "inner.dll"), "");
+            File.WriteAllText(Path.Combine(mods, "a.rpf"), "");
+            File.WriteAllText(Path.Combine(mods, "sub", "b.rpf"), "");
+
+            ModReport r = ModCheck.Scan(app, gta);
+            Equal("D3D11.dll|dinput8.dll|Trainer.asi", string.Join("|", r.GtaFiles), "GTA-Ordner");
+            Equal("dxgi.dll|NVE.asi|Toggler.addon64", string.Join("|", r.PluginFiles), "Plugins");
+            Equal(2, r.ModFileCount, "Mods");
+            Equal(8, r.Total, "Summe");
+            Equal(gta, r.GtaDir, "GTA-Ordner gemeldet");
+            True(File.Exists(Path.Combine(gta, "D3D11.dll")) && File.Exists(Path.Combine(plugins, "dxgi.dll")), "nichts verändert");
+        });
+
+        Run("Grafik-Mods: fehlende Ordner sind kein Fehler", () =>
+        {
+            string app = Path.Combine(NewDir("modempty"), "FiveM.app");
+            Directory.CreateDirectory(app);
+            ModReport none = ModCheck.Scan(app, null);
+            Equal(0, none.Total, "ohne GTA-Ordner");
+            Equal<string>(null, none.GtaDir, "GTA unbekannt");
+            Equal<string>(null, ModCheck.Scan(app, Path.Combine(app, "gibtsnicht")).GtaDir, "GTA-Ordner fehlt");
+        });
     }
 
     static string ReleaseJson(string tag, string assetName, string url, string state)

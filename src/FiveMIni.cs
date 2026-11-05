@@ -16,10 +16,29 @@ public static class FiveMIni
 
     public static string GetUpdateChannel(string iniText)
     {
+        return GetGameValue(iniText, Key);
+    }
+
+    // GTA-Ordner, den FiveM verwendet; null = nicht eingetragen
+    public static string GetGamePath(string iniText)
+    {
+        string path = GetGameValue(iniText, "IVPath");
+        return string.IsNullOrEmpty(path) ? null : path;
+    }
+
+    public static string ReadText(string iniPath)
+    {
+        bool bom;
+        Encoding enc;
+        return Decode(File.ReadAllBytes(iniPath), out bom, out enc);
+    }
+
+    static string GetGameValue(string iniText, string key)
+    {
         string[] lines = SplitLines(iniText);
         int start, end;
         if (!FindSection(lines, out start, out end)) return null;
-        int idx = FindKey(lines, start, end);
+        int idx = FindKey(lines, start, end, key);
         if (idx < 0) return null;
         return lines[idx].Substring(lines[idx].IndexOf('=') + 1).Trim();
     }
@@ -37,7 +56,7 @@ public static class FiveMIni
             return prefix + "[" + Section + "]" + nl + entry + nl;
         }
 
-        int idx = FindKey(lines.ToArray(), start, end);
+        int idx = FindKey(lines.ToArray(), start, end, Key);
         if (idx >= 0)
         {
             lines[idx] = entry;
@@ -56,22 +75,9 @@ public static class FiveMIni
     {
         if (!File.Exists(iniPath)) return IniResult.FileMissing;
 
-        byte[] bytes = File.ReadAllBytes(iniPath);
-        bool bom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
-        int offset = bom ? 3 : 0;
-
+        bool bom;
         Encoding enc;
-        string text;
-        try
-        {
-            enc = new UTF8Encoding(false, true);
-            text = enc.GetString(bytes, offset, bytes.Length - offset);
-        }
-        catch (DecoderFallbackException)
-        {
-            enc = Encoding.Default; // ANSI-Datei
-            text = enc.GetString(bytes);
-        }
+        string text = Decode(File.ReadAllBytes(iniPath), out bom, out enc);
 
         string updated = SetUpdateChannel(text, StableChannel);
         if (updated == text) return IniResult.AlreadyStable;
@@ -86,6 +92,22 @@ public static class FiveMIni
             fs.Write(body, 0, body.Length);
         }
         return IniResult.Changed;
+    }
+
+    static string Decode(byte[] bytes, out bool bom, out Encoding enc)
+    {
+        bom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+        int offset = bom ? 3 : 0;
+        try
+        {
+            enc = new UTF8Encoding(false, true);
+            return enc.GetString(bytes, offset, bytes.Length - offset);
+        }
+        catch (DecoderFallbackException)
+        {
+            enc = Encoding.Default; // ANSI-Datei
+            return enc.GetString(bytes);
+        }
     }
 
     public static string DisplayName(string channel)
@@ -125,12 +147,12 @@ public static class FiveMIni
         return true;
     }
 
-    static int FindKey(string[] lines, int start, int end)
+    static int FindKey(string[] lines, int start, int end, string key)
     {
         for (int i = start + 1; i < end; i++)
         {
             int eq = lines[i].IndexOf('=');
-            if (eq > 0 && string.Equals(lines[i].Substring(0, eq).Trim(), Key, StringComparison.OrdinalIgnoreCase))
+            if (eq > 0 && string.Equals(lines[i].Substring(0, eq).Trim(), key, StringComparison.OrdinalIgnoreCase))
                 return i;
         }
         return -1;

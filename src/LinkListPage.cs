@@ -34,7 +34,7 @@ public static class Projects
         }
         catch (Exception)
         {
-            MessageBox.Show(owner, "Der Browser konnte nicht geöffnet werden.\n\n" + url, "Link öffnen",
+            NeonDialog.Show(owner, "Der Browser konnte nicht geöffnet werden.\n\n" + url, "Link öffnen",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }

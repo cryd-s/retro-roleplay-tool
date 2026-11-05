@@ -44,6 +44,19 @@ public static class CleanTargets
         return new CleanTarget("Windows Temp (%TEMP%)", tempPath.TrimEnd('\\', '/'));
     }
 
+    // Shader-Cache der Grafiktreiber und von Windows (DirectX). Wird beim nächsten Spielstart neu aufgebaut.
+    public static List<CleanTarget> Shaders(string localAppData)
+    {
+        return new List<CleanTarget>
+        {
+            new CleanTarget("NVIDIA Shader-Cache", System.IO.Path.Combine(localAppData, "NVIDIA", "DXCache")),
+            new CleanTarget("AMD Shader-Cache", System.IO.Path.Combine(localAppData, "AMD", "DxCache")),
+            new CleanTarget("AMD Shader-Cache (DXC)", System.IO.Path.Combine(localAppData, "AMD", "DxcCache")),
+            new CleanTarget("Intel Shader-Cache", System.IO.Path.Combine(localAppData, "Intel", "ShaderCache")),
+            new CleanTarget("Windows Shader-Cache", System.IO.Path.Combine(localAppData, "D3DSCache")),
+        };
+    }
+
     public static string IniPath(string fiveMAppDir)
     {
         return System.IO.Path.Combine(fiveMAppDir, "CitizenFX.ini");
