@@ -6,7 +6,7 @@ name: Download-Seite hochladen
 on:
   push:
     branches: [main]
-    paths: [docs/index.html]
+    paths: ['docs/**']
   workflow_dispatch:
 
 permissions:
@@ -36,8 +36,12 @@ jobs:
           # Passwort über eine Konfigurationsdatei, damit es nicht in der Prozessliste steht.
           umask 077
           printf 'user = "%s:%s"\n' "$FTP_USER" "$FTP_PASSWORD" > "$RUNNER_TEMP/ftp.conf"
-          curl --fail --silent --show-error --ssl-reqd --config "$RUNNER_TEMP/ftp.conf" \
-            --upload-file docs/index.html "ftp://$FTP_HOST/index.html"
+          # Bilder zuerst, index.html zuletzt: So zeigt die neue Seite nie auf fehlende Dateien.
+          for file in $(find docs -maxdepth 1 -type f ! -name index.html | sort) docs/index.html; do
+            echo "Lade $file hoch"
+            curl --fail --silent --show-error --ssl-reqd --config "$RUNNER_TEMP/ftp.conf" \
+              --upload-file "$file" "ftp://$FTP_HOST/$(basename "$file")"
+          done
           rm -f "$RUNNER_TEMP/ftp.conf"
 
       - name: Seite prüfen
