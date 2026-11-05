@@ -55,12 +55,14 @@ public class FeatureRow : NeonControl
     }
 }
 
-// Unterseite „Sonderfunktionen“: TeamSpeak 3, SaltyChat, TS-Moved-nicht-Bugfix, FiveM in Steam, Grafik-Mods.
+// Unterseite „Sonderfunktionen“: TeamSpeak 3, SaltyChat, TS-Sounds, TS-Moved-nicht-Bugfix, FiveM in Steam, Grafik-Mods.
 public class ExtrasPage : Panel
 {
     readonly MainForm host;
-    readonly FeatureRow ts3Row, saltyRow, hostsRow, steamRow, modRow;
+    readonly FeatureRow ts3Row, saltyRow, soundRow, hostsRow, steamRow, modRow;
+    readonly AppSettings settings = new AppSettings(AppSettings.DefaultPath);
     ModReport modReport;                 // null = FiveM nicht gefunden oder nicht lesbar
+    bool soundsAvailable, soundsDisabled;
 
     Ts3Release ts3Latest;
     string saltyLatest;
@@ -81,6 +83,8 @@ public class ExtrasPage : Panel
             "TeamSpeak 3", "Lädt die aktuelle Version von teamspeak.com, prüft sie und installiert still.");
         saltyRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
             "SaltyChat", "Installiert das aktuelle Plugin von saltyhub.net in TeamSpeak 3.");
+        soundRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
+            "TeamSpeak-Sounds", "Schaltet alle TeamSpeak-Töne dauerhaft ab. Sprache bleibt.");
         hostsRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
             "TS-Moved-nicht-Bugfix", "Leitet " + HostsFix.Host + " in der hosts-Datei auf 127.0.0.1 um.");
         steamRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
@@ -92,6 +96,7 @@ public class ExtrasPage : Panel
 
         ts3Row.Action.Click += async delegate { await Guard(InstallTs3Async); };
         saltyRow.Action.Click += async delegate { await Guard(InstallSaltyAsync); };
+        soundRow.Action.Click += async delegate { await Guard(ToggleSoundsAsync); };
         hostsRow.Action.Click += async delegate { await Guard(ToggleHostsAsync); };
         steamRow.Action.Click += async delegate { await Guard(ToggleSteamAsync); };
         modRow.Action.Click += delegate { ShowModDetails(); };
@@ -113,6 +118,7 @@ public class ExtrasPage : Panel
     {
         ts3Row.Action.Enabled = enabled && !refreshing;
         saltyRow.Action.Enabled = enabled && !refreshing;
+        soundRow.Action.Enabled = enabled && !refreshing && soundsAvailable;
         hostsRow.Action.Enabled = enabled && !refreshing;
         steamRow.Action.Enabled = enabled && !refreshing && steamConfigDir != null && (steamReady || host.FiveMAppDir != null);
         modRow.Action.Enabled = enabled && !refreshing && modReport != null;
@@ -125,7 +131,7 @@ public class ExtrasPage : Panel
         if (refreshing) return;
         refreshing = true;
         SetButtonsEnabled(!host.Busy);
-        foreach (FeatureRow r in new[] { ts3Row, saltyRow, hostsRow, steamRow, modRow })
+        foreach (FeatureRow r in new[] { ts3Row, saltyRow, soundRow, hostsRow, steamRow, modRow })
         {
             r.Value = "wird geprüft …";
             r.ValueColor = Theme.Muted;
@@ -144,6 +150,9 @@ public class ExtrasPage : Panel
 
         // Grafik-Mods (lokal, schnell)
         ShowModState();
+
+        // TeamSpeak-Sounds (lokal, schnell)
+        ShowSoundState();
 
         // TeamSpeak 3
         string ts3Installed = Ts3.InstalledVersion();
@@ -205,6 +214,77 @@ public class ExtrasPage : Panel
             steamConfigDir = null;
             steamRow.Value = "Steam-Dateien nicht lesbar: " + ex.Message;
         }
+    }
+
+    void ShowSoundState()
+    {
+        soundsAvailable = soundsDisabled = false;
+        soundRow.Action.Text = "DEAKTIVIEREN";
+        soundRow.Action.Primary = true;
+        soundRow.ValueColor = Theme.Muted;
+        try
+        {
+            soundsAvailable = Ts3Sounds.IsAvailable(Ts3Sounds.SettingsDb);
+            if (!soundsAvailable)
+            {
+                soundRow.Value = "keine Einstellungen gefunden – TeamSpeak 3 einmal starten";
+                return;
+            }
+            soundsDisabled = Ts3Sounds.AreDisabled(Ts3Sounds.SettingsDb);
+        }
+        catch (Exception ex)
+        {
+            soundsAvailable = false;
+            soundRow.Value = "nicht lesbar: " + ex.Message;
+            return;
+        }
+        if (soundsDisabled)
+        {
+            soundRow.Value = "deaktiviert  ✔";
+            soundRow.ValueColor = Theme.Good;
+            soundRow.Action.Text = "AKTIVIEREN";
+            soundRow.Action.Primary = false;
+        }
+        else
+        {
+            soundRow.Value = "Sounds sind an";
+            soundRow.ValueColor = Theme.Pink;
+        }
+    }
+
+    async Task ToggleSoundsAsync()
+    {
+        bool disable = !soundsDisabled;
+        if (!Confirm(disable
+                ? "Alle TeamSpeak-Töne werden dauerhaft abgeschaltet, zum Beispiel beim Betreten eines Channels oder bei Anstupsern. " +
+                  "Die Sprache hörst du weiter.\n\nFortfahren?"
+                : "Die TeamSpeak-Töne werden wieder eingeschaltet.\n\nFortfahren?", "TeamSpeak-Sounds"))
+            return;
+
+        // TeamSpeak hält die Einstellung im Speicher und muss dafür geschlossen sein.
+        bool wasRunning = Ts3.IsRunning();
+        if (!await EnsureTs3ClosedAsync()) return;
+
+        host.SetBusy(true);
+        host.SetStatus("TeamSpeak-Einstellung wird geändert …", Theme.Text);
+        try
+        {
+            string db = Ts3Sounds.SettingsDb;
+            await Task.Run(() =>
+            {
+                if (disable) Ts3Sounds.Disable(db, settings);
+                else Ts3Sounds.Enable(db, settings);
+            });
+        }
+        finally
+        {
+            if (wasRunning)
+            {
+                try { Ts3.Start(); }
+                catch (Exception) { /* dann startet man TeamSpeak eben selbst */ }
+            }
+        }
+        host.SetStatus(disable ? "Fertig!  TeamSpeak-Töne sind abgeschaltet." : "Fertig!  TeamSpeak-Töne sind wieder an.", Theme.Orange);
     }
 
     void ShowModState()

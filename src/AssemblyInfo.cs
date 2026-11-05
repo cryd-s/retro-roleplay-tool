@@ -5,5 +5,5 @@ using System.Reflection;
 [assembly: AssemblyProduct("Retro Roleplay Tool")]
 [assembly: AssemblyCompany("RR | Manu")]
 [assembly: AssemblyCopyright("by RR | Manu")]
-[assembly: AssemblyVersion("1.7.0.0")]
-[assembly: AssemblyFileVersion("1.7.0.0")]
+[assembly: AssemblyVersion("1.8.0.0")]
+[assembly: AssemblyFileVersion("1.8.0.0")]

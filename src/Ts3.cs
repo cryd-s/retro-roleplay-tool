@@ -107,6 +107,16 @@ public static class Ts3
         }
     }
 
+    // Startet TeamSpeak wieder, falls der Ordner bekannt ist; sonst bleibt es geschlossen.
+    public static void Start()
+    {
+        string dir = InstalledLocation();
+        if (dir == null) return;
+        string exe = System.IO.Path.Combine(dir.Trim().Trim('"'), "ts3client_win64.exe");
+        if (!System.IO.File.Exists(exe)) return;
+        using (Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true })) { }
+    }
+
     // Startet den Installer still – bei bestehender Installation in denselben Ordner.
     // Windows zeigt dabei ggf. die Admin-Abfrage.
     public static int RunSilentInstaller(string installerPath)

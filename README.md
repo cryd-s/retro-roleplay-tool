@@ -37,6 +37,7 @@ Alle Versionen (auch die exe einzeln) findest du unter [Releases](https://github
 **Sonderfunktionen**
 - TeamSpeak 3 in der aktuellen Version installieren/aktualisieren (offizieller Download mit Prüfsummen-Check)
 - SaltyChat in der aktuellen Version installieren
+- TeamSpeak-Sounds dauerhaft deaktivieren oder wieder aktivieren (Sound-Paket „Sounds deactivated“, Sprache bleibt)
 - TS-Moved-nicht-Bugfix (hosts-Eintrag) aktivieren oder wieder entfernen
 - FiveM als Nicht-Steam-Spiel in die Steam-Bibliothek eintragen und Steam Input dafür aktivieren, oder beides wieder entfernen
   - Steam wird dafür normal geschlossen und danach wieder gestartet; vorher wird der aktuelle Stand gespeichert

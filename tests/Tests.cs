@@ -29,6 +29,7 @@ static class Tests
             SteamTests();
             UpdateTests();
             ModCheckTests();
+            Ts3SoundTests();
             DownloadTests();
         }
         finally
@@ -839,6 +840,117 @@ static class Tests
     static void SameBytes(byte[] expected, byte[] actual, string what)
     {
         Equal(BitConverter.ToString(expected), BitConverter.ToString(actual), what);
+    }
+
+    // Tabelle wie in der echten settings.db von TeamSpeak 3
+    static string NewTs3Db(string name, string pack)
+    {
+        string file = Path.Combine(NewDir(name), "settings.db");
+        using (SqliteDb db = SqliteDb.Create(file))
+        {
+            db.Execute("CREATE TABLE Notifications (timestamp INTEGER UNSIGNED NOT NULL, key VARCHAR NOT NULL UNIQUE, value VARCHAR)");
+            db.Execute("CREATE TABLE General (timestamp INTEGER UNSIGNED NOT NULL, key VARCHAR NOT NULL UNIQUE, value VARCHAR)");
+            db.Execute("INSERT INTO General VALUES (1, 'Identity', 'geheim')");
+            db.Execute("INSERT INTO Notifications VALUES (2, 'NotifyWhichSounds', '1')");
+            db.Execute("INSERT INTO Notifications VALUES (3, 'nosounds/Disabled', '20485,17475')");
+            if (pack != null) db.Execute("INSERT INTO Notifications VALUES (4, 'SoundPack', ?)", pack);
+        }
+        return file;
+    }
+
+    static void Ts3SoundTests()
+    {
+        Run("TS-Sounds: abschalten und zurück auf das vorherige Paket", () =>
+        {
+            string file = NewTs3Db("ts3a", "default_male");
+            var settings = new AppSettings(Path.Combine(Path.GetDirectoryName(file), "s.ini"));
+            True(Ts3Sounds.IsAvailable(file), "verfügbar");
+            True(!Ts3Sounds.AreDisabled(file), "am Anfang an");
+
+            Ts3Sounds.Disable(file, settings);
+            True(Ts3Sounds.AreDisabled(file), "abgeschaltet");
+            Equal("nosounds", Ts3Sounds.ReadPack(file), "Paket");
+
+            Ts3Sounds.Enable(file, settings);
+            Equal("default_male", Ts3Sounds.ReadPack(file), "vorheriges Paket");
+        });
+
+        Run("TS-Sounds: zweimal abschalten verliert das vorherige Paket nicht", () =>
+        {
+            string file = NewTs3Db("ts3b", "default_speech");
+            var settings = new AppSettings(Path.Combine(Path.GetDirectoryName(file), "s.ini"));
+            Ts3Sounds.Disable(file, settings);
+            Ts3Sounds.Disable(file, settings);
+            Ts3Sounds.Enable(file, settings);
+            Equal("default_speech", Ts3Sounds.ReadPack(file), "vorheriges Paket");
+        });
+
+        Run("TS-Sounds: war schon aus oder nie gesetzt, dann zurück auf Standard", () =>
+        {
+            string off = NewTs3Db("ts3c", "nosounds");
+            var s1 = new AppSettings(Path.Combine(Path.GetDirectoryName(off), "s.ini"));
+            Ts3Sounds.Disable(off, s1);
+            Ts3Sounds.Enable(off, s1);
+            Equal("default", Ts3Sounds.ReadPack(off), "war schon aus");
+
+            string unset = NewTs3Db("ts3d", null);
+            var s2 = new AppSettings(Path.Combine(Path.GetDirectoryName(unset), "s.ini"));
+            Equal<string>(null, Ts3Sounds.ReadPack(unset), "nie gesetzt");
+            Ts3Sounds.Disable(unset, s2);
+            Equal("nosounds", Ts3Sounds.ReadPack(unset), "Eintrag wird angelegt");
+            Ts3Sounds.Enable(unset, s2);
+            Equal("default", Ts3Sounds.ReadPack(unset), "Standard");
+        });
+
+        Run("TS-Sounds: alles andere in der Datenbank bleibt unverändert", () =>
+        {
+            string file = NewTs3Db("ts3e", "default");
+            Ts3Sounds.Disable(file, new AppSettings(Path.Combine(Path.GetDirectoryName(file), "s.ini")));
+            using (SqliteDb db = SqliteDb.OpenRead(file))
+            {
+                Equal("geheim", db.Scalar("SELECT value FROM General WHERE key = 'Identity'"), "Identität");
+                Equal("1", db.Scalar("SELECT value FROM Notifications WHERE key = 'NotifyWhichSounds'"), "andere Einstellung");
+                Equal("20485,17475", db.Scalar("SELECT value FROM Notifications WHERE key = 'nosounds/Disabled'"), "Liste");
+                Equal("3", db.Scalar("SELECT count(*) FROM Notifications"), "keine doppelten Zeilen");
+                Equal("ok", db.Scalar("PRAGMA integrity_check"), "Datenbank intakt");
+            }
+        });
+
+        Run("TS-Sounds: fehlende Datei oder Tabelle ändert nichts", () =>
+        {
+            string dir = NewDir("ts3f");
+            string missing = Path.Combine(dir, "settings.db");
+            True(!Ts3Sounds.IsAvailable(missing), "Datei fehlt");
+            Throws<IOException>(() => Ts3Sounds.Disable(missing, new AppSettings(Path.Combine(dir, "s.ini"))));
+            True(!File.Exists(missing), "keine leere Datenbank angelegt");
+
+            string empty = Path.Combine(dir, "empty.db");
+            using (SqliteDb db = SqliteDb.Create(empty)) db.Execute("CREATE TABLE Other (a)");
+            True(!Ts3Sounds.IsAvailable(empty), "Tabelle fehlt");
+            Throws<InvalidOperationException>(() => Ts3Sounds.Enable(empty, new AppSettings(Path.Combine(dir, "s.ini"))));
+        });
+
+        Run("TS-Sounds: bei gesperrter Datenbank bleibt der alte Wert", () =>
+        {
+            string file = NewTs3Db("ts3g", "default");
+            using (SqliteDb holder = SqliteDb.OpenWrite(file))
+            {
+                holder.Execute("BEGIN EXCLUSIVE");
+                Throws<IOException>(() => Ts3Sounds.Disable(file, new AppSettings(Path.Combine(Path.GetDirectoryName(file), "s.ini"))));
+                holder.Execute("ROLLBACK");
+            }
+            Equal("default", Ts3Sounds.ReadPack(file), "unverändert");
+        });
+
+        Run("TS-Sounds: Pfade mit Umlauten funktionieren", () =>
+        {
+            string dir = Path.Combine(NewDir("ts3h"), "Müller Ä");
+            Directory.CreateDirectory(dir);
+            string file = Path.Combine(dir, "settings.db");
+            File.Move(NewTs3Db("ts3i", "default"), file);
+            Ts3Sounds.Disable(file, new AppSettings(Path.Combine(dir, "s.ini")));
+            True(Ts3Sounds.AreDisabled(file), "abgeschaltet");
+        });
     }
 
     static void ModCheckTests()
