@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
@@ -8,13 +9,21 @@ public class Project
     public string Name, Description, Url;
 }
 
-// Discord-Bots von RR | Manu – im Programm verlinkt.
+// Im Programm verlinkte Seiten
 public static class Projects
 {
-    public static readonly Project[] All =
+    public static readonly Project[] Bots =
     {
         new Project { Name = "Retro RP", Description = "Bot für Familien-Discord", Url = "https://retrorp.de" },
         new Project { Name = "Retro Business", Description = "Bot für Business", Url = "https://retrobusiness.de" },
+    };
+
+    public static readonly Project[] Retro =
+    {
+        new Project { Name = "UCP", Description = "User Control Panel im Retro-Portal", Url = "https://retro-roleplay.ch/portal" },
+        new Project { Name = "Regelwerk", Description = "Die Regeln von Retro Roleplay", Url = "https://retro-roleplay.ch/regelwerk" },
+        new Project { Name = "Discord", Description = "Der Retro-Discord", Url = "https://discord.gg/retrorp" },
+        new Project { Name = "Entbannungsdiscord", Description = "Discord für Entbannungen", Url = "https://discord.gg/9s3n4u5ckE" },
     };
 
     public static void Open(string url, IWin32Window owner)
@@ -31,19 +40,19 @@ public static class Projects
     }
 }
 
-// Unterseite „Discord Bots“
-public class BotsPage : Panel
+// Unterseite mit einer Liste von Links (Discord Bots, Links zu Retro)
+public class LinkListPage : Panel
 {
-    readonly System.Collections.Generic.List<FeatureRow> rows = new System.Collections.Generic.List<FeatureRow>();
+    readonly List<FeatureRow> rows = new List<FeatureRow>();
 
     // top = wo der Inhalt beginnt (darüber liegt der Seitenkopf des Hauptfensters)
-    public BotsPage(int margin, int inner, int top)
+    public LinkListPage(Project[] items, string actionText, int margin, int inner, int top)
     {
         BackColor = Theme.Bg;
         int y = top;
 
         int rowHeight = Theme.S(84);
-        foreach (Project p in Projects.All)
+        foreach (Project p in items)
         {
             var row = new FeatureRow(Theme.S(230))
             {
@@ -53,7 +62,7 @@ public class BotsPage : Panel
                 ValueColor = Theme.Orange,
                 Bounds = new Rectangle(margin, y, inner, rowHeight),
             };
-            row.Action.Text = "WEBSEITE ÖFFNEN";
+            row.Action.Text = actionText;
             string url = p.Url;
             row.Action.Click += delegate { Projects.Open(url, FindForm()); };
             Controls.Add(row);

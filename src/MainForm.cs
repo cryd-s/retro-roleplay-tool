@@ -44,10 +44,10 @@ public class MainForm : Form
     NeonButton updateButton;
     GtaSettingsPage gta;
     ExtrasPage extras;
-    BotsPage bots;
+    LinkListPage bots, links;
     readonly List<NavTile> tiles = new List<NavTile>();
     readonly List<NeonButton> backButtons = new List<NeonButton>();
-    Panel[] pages;                 // 0 = Übersicht, 1 = Cleaner, 2 = GTA-Einstellungen, 3 = Sonderfunktionen, 4 = Discord Bots
+    Panel[] pages;                 // 0 = Übersicht, 1 = Cleaner, 2 = GTA-Einstellungen, 3 = Sonderfunktionen, 4 = Discord Bots, 5 = Links zu Retro
     bool measuredOnce;
 
     bool busy;
@@ -114,6 +114,7 @@ public class MainForm : Form
             new[] { "GTA-EINSTELLUNGEN", "Texture Budget, FXAA, VSync, Dichte, Distanz · mit Zurück-Funktion", "" },
             new[] { "SONDERFUNKTIONEN", "TeamSpeak 3, SaltyChat, TS-Moved-nicht-Bugfix, FiveM in Steam", "" },
             new[] { "DISCORD BOTS", "Retro RP und Retro Business", "" },
+            new[] { "LINKS ZU RETRO", "UCP, Regelwerk, Discord, Entbannungsdiscord", "" },
         };
         int tileH = Theme.S(100), tileGlow = Theme.S(6);
         for (int i = 0; i < tileDefs.Length; i++)
@@ -196,14 +197,17 @@ public class MainForm : Form
         Controls.Add(gta);
         extras = new ExtrasPage(this, m, inner, contentTop) { Visible = false, Location = new Point(0, pageTop) };
         AddPageHeader(extras, "SONDERFUNKTIONEN", m, inner);
-        bots = new BotsPage(m, inner, contentTop) { Visible = false, Location = new Point(0, pageTop) };
+        bots = new LinkListPage(Projects.Bots, "WEBSEITE ÖFFNEN", m, inner, contentTop) { Visible = false, Location = new Point(0, pageTop) };
         AddPageHeader(bots, "DISCORD BOTS", m, inner);
+        links = new LinkListPage(Projects.Retro, "LINK ÖFFNEN", m, inner, contentTop) { Visible = false, Location = new Point(0, pageTop) };
+        AddPageHeader(links, "LINKS ZU RETRO", m, inner);
         Controls.Add(extras);
         Controls.Add(bots);
+        Controls.Add(links);
 
         // Alle Seiten bekommen dieselbe Höhe – die der längsten.
-        pages = new Panel[] { overview, mainPage, gta, extras, bots };
-        int pageHeight = Math.Max(Math.Max(oy, y), Math.Max(gta.ContentHeight, Math.Max(extras.ContentHeight, bots.ContentHeight)));
+        pages = new Panel[] { overview, mainPage, gta, extras, bots, links };
+        int pageHeight = Math.Max(Math.Max(oy, y), Math.Max(gta.ContentHeight, Math.Max(extras.ContentHeight, Math.Max(bots.ContentHeight, links.ContentHeight))));
         foreach (Panel p in pages) p.Size = new Size(width, pageHeight);
         y = pageTop + pageHeight;
 
@@ -670,6 +674,7 @@ public class MainForm : Form
         foreach (NavTile t in tiles) t.Enabled = idle;
         foreach (NeonButton b in backButtons) b.Enabled = idle;
         bots.SetButtonsEnabled(idle);
+        links.SetButtonsEnabled(idle);
         installRow.Action.Enabled = idle;
         cardNormal.Enabled = idle && fiveM.Found;
         cardFull.Enabled = idle && fiveM.Found;
@@ -689,7 +694,7 @@ public class MainForm : Form
         bar.Value = permille;
     }
 
-    // 0 = Übersicht, 1 = Cleaner, 2 = GTA-Einstellungen, 3 = Sonderfunktionen, 4 = Discord Bots
+    // 0 = Übersicht, 1 = Cleaner, 2 = GTA-Einstellungen, 3 = Sonderfunktionen, 4 = Discord Bots, 5 = Links zu Retro
     void ShowPage(int index)
     {
         if (busy) return;

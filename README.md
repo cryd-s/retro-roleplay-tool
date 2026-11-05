@@ -42,6 +42,12 @@ Alle Versionen (auch die exe einzeln) findest du unter [Releases](https://github
   - Steam wird dafür normal geschlossen und danach wieder gestartet; vorher wird der aktuelle Stand gespeichert
   - **Noch nicht mit echtem Steam getestet.** FiveM unterstützt Steam Input nicht offiziell, der Controller funktioniert also vielleicht nicht in jedem Fall
 
+**Links zu Retro**
+- [UCP](https://retro-roleplay.ch/portal)
+- [Regelwerk](https://retro-roleplay.ch/regelwerk)
+- [Discord](https://discord.gg/retrorp)
+- [Entbannungsdiscord](https://discord.gg/9s3n4u5ckE)
+
 **Update-Hinweis**
 - Fragt beim Start bei GitHub die neueste Version ab und zeigt bei einer neueren Version einen Hinweis mit direktem Download-Link zur ZIP
 - Installiert nichts selbst; ohne Internet erscheint einfach kein Hinweis
