@@ -26,6 +26,12 @@ public static class Projects
         new Project { Name = "Entbannungsdiscord", Description = "Discord für Entbannungen", Url = "https://discord.gg/9s3n4u5ckE" },
     };
 
+    // Steht mit etwas Abstand unter den Retro-Links
+    public static readonly Project[] RetroExtras =
+    {
+        new Project { Name = "EzTunes", Description = "PC-Optimierung für FiveM und mehr", Url = "https://eztunes.online/" },
+    };
+
     public static void Open(string url, IWin32Window owner)
     {
         try
@@ -46,30 +52,38 @@ public class LinkListPage : Panel
     readonly List<FeatureRow> rows = new List<FeatureRow>();
 
     // top = wo der Inhalt beginnt (darüber liegt der Seitenkopf des Hauptfensters)
-    public LinkListPage(Project[] items, string actionText, int margin, int inner, int top)
+    // extras = weitere Links, abgesetzt unter der Liste
+    public LinkListPage(Project[] items, string actionText, int margin, int inner, int top, Project[] extras = null)
     {
         BackColor = Theme.Bg;
         int y = top;
 
-        int rowHeight = Theme.S(84);
-        foreach (Project p in items)
+        foreach (Project p in items) AddRow(p, actionText, margin, inner, ref y);
+        if (extras != null)
         {
-            var row = new FeatureRow(Theme.S(230))
-            {
-                Title = p.Name,
-                Detail = p.Description,
-                Value = p.Url.Replace("https://", ""),
-                ValueColor = Theme.Orange,
-                Bounds = new Rectangle(margin, y, inner, rowHeight),
-            };
-            row.Action.Text = actionText;
-            string url = p.Url;
-            row.Action.Click += delegate { Projects.Open(url, FindForm()); };
-            Controls.Add(row);
-            rows.Add(row);
-            y += rowHeight;
+            y += Theme.S(28);
+            foreach (Project p in extras) AddRow(p, actionText, margin, inner, ref y);
         }
         ContentHeight = y + Theme.S(12);
+    }
+
+    void AddRow(Project p, string actionText, int margin, int inner, ref int y)
+    {
+        int rowHeight = Theme.S(84);
+        var row = new FeatureRow(Theme.S(230))
+        {
+            Title = p.Name,
+            Detail = p.Description,
+            Value = p.Url.Replace("https://", "").TrimEnd('/'),
+            ValueColor = Theme.Orange,
+            Bounds = new Rectangle(margin, y, inner, rowHeight),
+        };
+        row.Action.Text = actionText;
+        string url = p.Url;
+        row.Action.Click += delegate { Projects.Open(url, FindForm()); };
+        Controls.Add(row);
+        rows.Add(row);
+        y += rowHeight;
     }
 
     public int ContentHeight { get; private set; }

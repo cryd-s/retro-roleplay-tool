@@ -62,6 +62,7 @@ Alle Versionen (auch die exe einzeln) findest du unter [Releases](https://github
 - [Regelwerk](https://retro-roleplay.ch/regelwerk)
 - [Discord](https://discord.gg/retrorp)
 - [Entbannungsdiscord](https://discord.gg/9s3n4u5ckE)
+- [EzTunes](https://eztunes.online/) – PC-Optimierung für FiveM und mehr
 
 **Update-Hinweis**
 - Fragt beim Start bei GitHub die neueste Version ab und zeigt bei einer neueren Version einen Hinweis mit direktem Download-Link zur ZIP

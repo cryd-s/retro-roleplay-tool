@@ -116,7 +116,7 @@ public class MainForm : Form
             new[] { "GTA-EINSTELLUNGEN", "Texture Budget, FXAA, VSync, Dichte, Distanz · mit Zurück-Funktion", "" },
             new[] { "SONDERFUNKTIONEN", "TeamSpeak, SaltyChat, Rockstar- und Netzwerk-Fix, FiveM in Steam, Grafik-Mods", "" },
             new[] { "DISCORD BOTS", "Retro RP und Retro Business", "" },
-            new[] { "LINKS ZU RETRO", "UCP, Regelwerk, Discord, Entbannungsdiscord", "" },
+            new[] { "LINKS ZU RETRO", "UCP, Regelwerk, Discord, Entbannungsdiscord, EzTunes", "" },
         };
         int tileH = Theme.S(100), tileGlow = Theme.S(6);
         for (int i = 0; i < tileDefs.Length; i++)
@@ -203,7 +203,7 @@ public class MainForm : Form
         AddPageHeader(extras, "SONDERFUNKTIONEN", m, inner);
         bots = new LinkListPage(Projects.Bots, "WEBSEITE ÖFFNEN", m, inner, contentTop) { Visible = false, Location = new Point(0, pageTop) };
         AddPageHeader(bots, "DISCORD BOTS", m, inner);
-        links = new LinkListPage(Projects.Retro, "LINK ÖFFNEN", m, inner, contentTop) { Visible = false, Location = new Point(0, pageTop) };
+        links = new LinkListPage(Projects.Retro, "LINK ÖFFNEN", m, inner, contentTop, Projects.RetroExtras) { Visible = false, Location = new Point(0, pageTop) };
         AddPageHeader(links, "LINKS ZU RETRO", m, inner);
         Controls.Add(extras);
         Controls.Add(bots);
