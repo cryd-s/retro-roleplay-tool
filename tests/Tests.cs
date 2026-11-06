@@ -936,14 +936,206 @@ static class Tests
             True(RockstarLauncher.IsGameProcessName("GTA5"), "GTA5");
             True(RockstarLauncher.IsGameProcessName("GTA5_Enhanced"), "Enhanced");
             True(RockstarLauncher.IsGameProcessName("PlayGTAV"), "PlayGTAV");
+            True(RockstarLauncher.IsGameProcessName("GTAVLauncher"), "GTAVLauncher");
             True(!RockstarLauncher.IsGameProcessName("Launcher"), "Launcher zählt nicht");
         });
 
         Run("Rockstar: Fertig-Text nennt übersprungene Dateien nur, wenn es welche gibt", () =>
         {
-            True(!RockstarLauncher.DoneText(0).Contains("Benutzung"), "keine");
-            True(RockstarLauncher.DoneText(1).Contains("1 Datei war noch in Benutzung und wurde nicht"), "eine");
-            True(RockstarLauncher.DoneText(3).Contains("3 Dateien waren noch in Benutzung und wurden nicht"), "mehrere");
+            True(!RockstarLauncher.DoneText(0, 0, true).Contains("Benutzung"), "keine");
+            True(RockstarLauncher.DoneText(0, 1, true).Contains("1 Datei war noch in Benutzung und wurde nicht"), "eine");
+            True(RockstarLauncher.DoneText(0, 3, true).Contains("3 Dateien waren noch in Benutzung und wurden nicht"), "mehrere");
+        });
+
+        Run("Rockstar: Fertig-Text nennt genau die fehlgeschlagenen Schritte", () =>
+        {
+            string ok = RockstarLauncher.DoneText(0, 0, true);
+            True(ok.StartsWith("Der Fix ist durch.") && !ok.Contains("•"), "alles gut");
+            string bad = RockstarLauncher.DoneText(RockstarLauncher.DefenderFailed | RockstarLauncher.ServiceFailed, 0, false);
+            True(bad.Contains("Defender-Freigabe") && bad.Contains("Rockstar-Dienst"), "gemeldet");
+            True(!bad.Contains("Winsock konnten") && !bad.Contains("Rechte konnten"), "nur die betroffenen");
+            True(bad.Contains("selbst"), "Launcher von Hand");
+        });
+
+        Run("Rockstar: Defender-Freigabe nur für die exakte Organisation", () =>
+        {
+            True(RockstarLauncher.IsRockstarSubject("CN=\"Rockstar Games, Inc.\", OU=Rockstar Partners, O=\"Rockstar Games, Inc.\", L=New York, S=New York, C=US"), "echt");
+            True(!RockstarLauncher.IsRockstarSubject("CN=\"Rockstar Games, Inc.\", O=Fremd GmbH, C=DE"), "nur CN");
+            True(!RockstarLauncher.IsRockstarSubject("OU=\"Rockstar Games, Inc.\", O=Fremd"), "nur OU");
+            True(!RockstarLauncher.IsRockstarSubject("O=\"Rockstar Games, Inc. Fake\", C=US"), "ähnlicher Name");
+            True(!RockstarLauncher.IsRockstarSubject(null), "leer");
+        });
+
+        Run("Rockstar: Unsignierte Dateien gelten nie als echt", () =>
+        {
+            string file = Path.Combine(NewDir("rockstarsig"), "Launcher.exe");
+            File.WriteAllText(file, "MZ gefaelscht");
+            True(!RockstarLauncher.IsRockstarSigned(file), "unsigniert");
+            True(!RockstarLauncher.IsRockstarSigned(file + ".fehlt"), "fehlt");
+            True(!RockstarLauncher.IsRockstarSigned(Path.Combine(Environment.SystemDirectory, "cmd.exe")), "fremde Signatur");
+        });
+
+        Run("Rockstar: Programmordner bekommen nie Schreibrechte oder einen Reset", () =>
+        {
+            const string sid = "S-1-5-21-1-2-3-1001";
+            var targets = RockstarLauncher.PlanTargets(sid, @"E:\Dok", @"C:\U\L", @"C:\U\R", @"C:\ProgramData",
+                @"C:\Program Files", @"C:\Program Files (x86)", @"C:\Games\Rockstar", @"C:\Program Files\Rockstar Games\Social Club");
+            var byPath = new Dictionary<string, RepairTarget>(StringComparer.OrdinalIgnoreCase);
+            foreach (RepairTarget t in targets) { True(!byPath.ContainsKey(t.Path), "doppelt: " + t.Path); byPath[t.Path] = t; }
+
+            foreach (string own in new[] { @"E:\Dok\Rockstar Games", @"C:\U\L\Rockstar Games", @"C:\U\R\Rockstar Games" })
+            {
+                True(byPath[own].ResetFirst, "Reset: " + own);
+                Equal("*" + sid, byPath[own].OwnerSid, "Besitzer: " + own);
+            }
+            foreach (string program in new[] { @"C:\Games\Rockstar", @"C:\Program Files\Rockstar Games\Social Club", @"C:\Program Files\Rockstar Games\Launcher", @"C:\Program Files (x86)\Rockstar Games\Social Club" })
+            {
+                RepairTarget t = byPath[program];
+                True(!t.ResetFirst, "kein Reset: " + program);
+                Equal("*S-1-5-32-544", t.OwnerSid, "Besitzer: " + program);
+                foreach (string g in t.Grants)
+                    True(!g.Contains(sid) && (g.EndsWith(":(OI)(CI)RX") || g.StartsWith("*S-1-5-18") || g.StartsWith("*S-1-5-32-544")), "nur lesen: " + g);
+            }
+            foreach (RepairTarget t in targets)
+                True(t.Path.IndexOf("Grand Theft Auto", StringComparison.OrdinalIgnoreCase) < 0 && (t.RootOnly || !t.Path.EndsWith(@"Program Files\Rockstar Games")), "GTA bleibt: " + t.Path);
+        });
+
+        Run("Rockstar: Programmordner verlieren Schreibrechte des eigenen Kontos, eigene Ordner nicht", () =>
+        {
+            const string sid = "S-1-5-21-1-2-3-1001";
+            var targets = RockstarLauncher.PlanTargets(sid, @"E:\Dok", @"C:\U\L", @"C:\U\R", @"C:\ProgramData",
+                @"C:\Program Files", null, @"C:\Games\Rockstar", null);
+            foreach (RepairTarget t in targets)
+            {
+                string all = "";
+                foreach (var c in RockstarLauncher.AclCommands(t)) all += c.Value + "\n";
+                bool isProgram = t.Path.StartsWith(@"C:\Games\Rockstar") || t.Path.StartsWith(@"C:\Program Files");
+                Equal(isProgram, all.Contains("/remove:g *" + sid), "Regel entfernen: " + t.Path);
+                if (isProgram && !t.RootOnly) True(all.IndexOf("/remove:g") < all.IndexOf("/grant") && !all.Contains("/reset"), "Reihenfolge: " + t.Path);
+            }
+        });
+
+        Run("Rockstar: Am Oberordner wird nur die Regel des Kontos entfernt, nicht rekursiv", () =>
+        {
+            const string sid = "S-1-5-21-1-2-3-1001";
+            var targets = RockstarLauncher.PlanTargets(sid, @"E:\Dok", @"C:\U\L", @"C:\U\R", @"C:\ProgramData", @"C:\Program Files", null, null, null);
+            RepairTarget root = targets.Find(t => t.Path == @"C:\Program Files\Rockstar Games");
+            True(root != null && root.RootOnly, "Oberordner geplant");
+            var commands = RockstarLauncher.AclCommands(root);
+            Equal(1, commands.Count, "nur ein Befehl");
+            Equal("\"C:\\Program Files\\Rockstar Games\" /remove:g *" + sid + " /C /Q", commands[0].Value, "genau dieser Befehl");
+        });
+
+        Run("Rockstar: Dokumente-Ordner wird geleert, Logs und Verknüpfungen bleiben", () =>
+        {
+            string root = NewDir("rockstardocs");
+            string docs = Path.Combine(root, "Dokumente");
+            string launcher = RockstarLauncher.DocumentsLauncherDir(docs);
+            string save = Path.Combine(docs, "Rockstar Games", "GTA V", "Profiles", "SGTA50000");
+            string outside = Path.Combine(root, "Woanders");
+            Directory.CreateDirectory(Path.Combine(launcher, "Profiles"));
+            Directory.CreateDirectory(Path.GetDirectoryName(save));
+            Directory.CreateDirectory(outside);
+            File.WriteAllText(save, "Spielstand");
+            File.WriteAllText(Path.Combine(launcher, "launcher.log"), "log");
+            File.WriteAllText(Path.Combine(launcher, "settings.dat"), "x");
+            File.WriteAllText(Path.Combine(launcher, "Profiles", "a.dat"), "x");
+            File.WriteAllText(Path.Combine(outside, "fremd.txt"), "x");
+            string cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+            Equal(0, SystemCommands.RunAll(new[] { new KeyValuePair<string, string>(cmd, "/c mklink /J \"" + Path.Combine(launcher, "Link") + "\" \"" + outside + "\"") }), "Verknüpfung");
+
+            Equal(1, RockstarLauncher.CleanKeepingLogs(launcher), "Verknüpfung übersprungen");
+            True(File.Exists(Path.Combine(launcher, "launcher.log")), "Log bleibt");
+            True(!File.Exists(Path.Combine(launcher, "settings.dat")), "Datei weg");
+            True(!Directory.Exists(Path.Combine(launcher, "Profiles")), "Unterordner weg");
+            True(File.Exists(Path.Combine(outside, "fremd.txt")), "Ziel der Verknüpfung unberührt");
+            Equal("Spielstand", File.ReadAllText(save), "Spielstand unberührt");
+            Equal(0, RockstarLauncher.CleanKeepingLogs(Path.Combine(root, "fehlt")), "fehlender Ordner");
+        });
+
+        Run("Rockstar: Defender erlaubt nur Rockstar-Programme, nie das Spiel oder einen Ordner", () =>
+        {
+            var apps = RockstarLauncher.AllowedAppCandidates(@"C:\Games\Rockstar", @"C:\Program Files\Rockstar Games\Social Club");
+            Equal(@"C:\Games\Rockstar\Launcher.exe", apps[0], "Launcher zuerst");
+            True(apps.Contains(@"C:\Games\Rockstar\RockstarService.exe"), "Dienst");
+            True(apps.Contains(@"C:\Program Files\Rockstar Games\Social Club\SocialClubHelper.exe"), "Social Club");
+            foreach (string app in apps) True(app.EndsWith(".exe") && app.IndexOf("GTA", StringComparison.OrdinalIgnoreCase) < 0, "nur Programme: " + app);
+            Equal(0, RockstarLauncher.AllowedAppCandidates(null, null).Count, "nichts bekannt");
+        });
+
+        Run("Rockstar: Gefährliche Pfade aus der Registry werden abgelehnt", () =>
+        {
+            foreach (string bad in new[] { null, "", @"C:\", @"C:", @"C:\Windows", @"C:\Program Files", @"C:\Program Files\", @"C:\Program Files (x86)", @"C:\Users", @"C:\Games", @"C:\Program Files\Rockstar Games", @"\\server\share\x", "relativ" })
+                True(!RockstarLauncher.IsSafeProgramDir(bad), "abgelehnt: " + bad);
+            True(RockstarLauncher.IsSafeProgramDir(@"C:\Games\Rockstar"), "eigener Ordner");
+            True(RockstarLauncher.IsSafeProgramDir("\"C:\\Program Files\\Rockstar Games\\Launcher\\\""), "mit Anführungszeichen");
+        });
+
+        Run("Rockstar: Admin-Teil prüft seine Eingaben", () =>
+        {
+            const string sid = "S-1-5-21-1-2-3-1001", backup = @"C:\U\R\RetroRoleplayTool\Sicherung Rockstar\2026";
+            True(RockstarLauncher.IsValidElevatedInput(sid, @"E:\", @"C:\U\L", @"C:\U\R", backup), "gültig");
+            True(!RockstarLauncher.IsValidElevatedInput("S-1-5-18", @"E:\", @"C:\U\L", @"C:\U\R", backup), "falsche SID");
+            True(!RockstarLauncher.IsValidElevatedInput(sid + " /x", @"E:\", @"C:\U\L", @"C:\U\R", backup), "SID mit Zusatz");
+            True(!RockstarLauncher.IsValidElevatedInput(sid, "relativ", @"C:\U\L", @"C:\U\R", backup), "relativer Pfad");
+            True(!RockstarLauncher.IsValidElevatedInput(sid, @"\\server\x", @"C:\U\L", @"C:\U\R", backup), "Netzwerkpfad");
+            True(!RockstarLauncher.IsValidElevatedInput(sid, @"E:\", @"C:\U\L", @"C:\U\R", @"C:\Windows"), "falscher Sicherungsordner");
+            Equal(64, RockstarLauncher.RunElevated(new[] { "falsch" }), "falsche Anzahl bricht ab");
+            Equal(64, RockstarLauncher.RunElevated(new[] { "S-1-5-18", @"E:\", @"C:\U\L", @"C:\U\R", backup }), "ungültig bricht ab");
+        });
+
+        Run("Rockstar: Argumente überstehen Leerzeichen und E:\\", () =>
+        {
+            Equal("\"C:\\Mein Ordner\"", RockstarLauncher.Quote(@"C:\Mein Ordner"), "Leerzeichen");
+            Equal("\"E:\\\\\"", RockstarLauncher.Quote(@"E:\"), "Backslash am Ende");
+            True(RockstarLauncher.BuildElevatedArguments("S", @"E:\", "L", "R", "B").StartsWith(RockstarLauncher.ElevatedArgument + " \"S\" \"E:\\\\\" "), "Reihenfolge");
+        });
+
+        Run("Rockstar: Dienst wird auf Automatisch gestellt", () =>
+        {
+            Equal("config \"Rockstar Service\" start= auto obj= LocalSystem", RockstarLauncher.ServiceConfigCommands()[0].Value, "config");
+            Equal("start \"Rockstar Service\"", RockstarLauncher.ServiceStartCommands()[0].Value, "start");
+        });
+
+        Run("Rockstar: Reparatur entfernt Sperren, sichert Rechte und lässt Dateien in Ruhe", () =>
+        {
+            string root = NewDir("rockstaracl");
+            string dir = Path.Combine(root, "Rockstar Games");
+            string save = Path.Combine(dir, "GTA V", "Profiles");
+            Directory.CreateDirectory(save);
+            string file = Path.Combine(save, "SGTA50000");
+            File.WriteAllText(file, "Spielstand");
+            string sid = System.Security.Principal.WindowsIdentity.GetCurrent().User.Value;
+
+            // Schreibsperre setzen, wie sie der Launcher-Fehler auslösen würde
+            string icacls = Path.Combine(Environment.SystemDirectory, "icacls.exe");
+            Equal(0, SystemCommands.RunAll(new[] { new KeyValuePair<string, string>(icacls, "\"" + file + "\" /deny *" + sid + ":(W)") }), "Sperre gesetzt");
+            Throws<UnauthorizedAccessException>(() => File.AppendAllText(file, "x"));
+
+            var target = new RepairTarget { Path = dir, OwnerSid = "*" + sid, ResetFirst = true, Grants = new[] { "*" + sid + ":(OI)(CI)F" } };
+            string backup = Path.Combine(root, "Sicherung");
+            True(RockstarLauncher.Repair(target, backup, 1), "Reparatur meldet Erfolg");
+
+            Equal("Spielstand", File.ReadAllText(file), "Inhalt unverändert");
+            File.AppendAllText(file, "x");
+            True(File.Exists(Path.Combine(backup, "Rechte 1.txt")), "Rechte gesichert");
+            True(File.ReadAllText(Path.Combine(backup, "Liste.txt")).Contains("/restore"), "Rückweg notiert");
+        });
+
+        Run("Rockstar: Ordner mit verknüpften Unterordnern werden nicht angefasst", () =>
+        {
+            string root = NewDir("rockstarlink");
+            string dir = Path.Combine(root, "Rockstar Games");
+            string outside = Path.Combine(root, "Woanders");
+            Directory.CreateDirectory(dir);
+            Directory.CreateDirectory(outside);
+            string cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+            Equal(0, SystemCommands.RunAll(new[] { new KeyValuePair<string, string>(cmd, "/c mklink /J \"" + Path.Combine(dir, "Link") + "\" \"" + outside + "\"") }), "Verknüpfung");
+            True(RockstarLauncher.ContainsLinkedFolder(dir), "erkannt");
+            string backup = Path.Combine(root, "Sicherung");
+            var target = new RepairTarget { Path = dir, OwnerSid = "*S-1-5-32-544", ResetFirst = true, Grants = new[] { "*S-1-5-18:(OI)(CI)F" } };
+            True(!RockstarLauncher.Repair(target, backup, 1), "abgelehnt");
+            True(!Directory.Exists(backup), "nichts begonnen");
         });
 
         Run("Rockstar: Leeren entfernt den Inhalt, der Ordner daneben bleibt", () =>

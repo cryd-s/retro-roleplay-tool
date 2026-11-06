@@ -103,7 +103,7 @@ public class ExtrasPage : Panel
             "TS-Moved-nicht-Bugfix", "Leitet " + HostsFix.Host + " in der hosts-Datei auf 127.0.0.1 um.");
         y = rowsTop;   // zweiter Reiter: dieselbe Fläche
         rockstarRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
-            "Rockstar Launcher Fix", "Setzt DNS-Cache und Winsock zurück und leert den Launcher-Cache.");
+            "Rockstar Launcher Fix", "Defender-Freigabe, Ordnerrechte, Dienst, Netzwerk und Launcher-Cache.");
         rockstarRow.Action.Text = "FIX STARTEN";
         networkRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
             "Netzwerk Fix", "Setzt Winsock und TCP/IP zurück und leert den DNS-Cache.");
@@ -283,12 +283,17 @@ public class ExtrasPage : Panel
 
         host.SetBusy(true);
         // Zuerst die Admin-Abfrage: Wird sie abgelehnt, ist noch nichts verändert.
+        // Der Admin-Teil schließt auch den Launcher und repariert die Rechte, danach lässt sich der Cache sicher löschen.
         host.SetStatus("Bitte die Windows-Admin-Abfrage bestätigen …", Theme.Text);
-        int code = await RunElevatedAsync(RockstarLauncher.ElevatedArgument);
-        if (code != 0) throw new Exception("DNS-Cache oder Winsock konnten nicht zurückgesetzt werden (Code " + code + "). Der Launcher-Cache wurde nicht angefasst.");
-
-        host.SetStatus("Rockstar Launcher wird geschlossen …", Theme.Text);
-        await Task.Run(() => RockstarLauncher.CloseLauncher());
+        string backupDir = Path.Combine(RockstarLauncher.BackupRoot, DateTime.Now.ToString("yyyy-MM-dd HH-mm-ss"));
+        int flags = await RunElevatedAsync(RockstarLauncher.BuildElevatedArguments(
+            System.Security.Principal.WindowsIdentity.GetCurrent().User.Value,
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            backupDir));
+        if (flags < 0 || flags > RockstarLauncher.MaxFlags)
+            throw new Exception("Der Fix konnte nicht gestartet werden (Code " + flags + "). Es wurde nichts geändert.");
 
         host.SetStatus("Launcher-Cache wird gelöscht …", Theme.Text);
         string dir = RockstarCacheDir;
@@ -298,8 +303,16 @@ public class ExtrasPage : Panel
             CleanResult result = await Task.Run(() => FolderCleaner.CleanContents(dir, null));
             skipped = result.FilesSkipped;
         }
-        host.SetStatus("Fertig!  Bitte jetzt den PC neu starten.", Theme.Orange);
-        NeonDialog.Show(FindForm(), RockstarLauncher.DoneText(skipped), "Rockstar Launcher Fix", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        string documentsDir = RockstarLauncher.DocumentsLauncherDir(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
+        skipped += await Task.Run(() => RockstarLauncher.CleanKeepingLogs(documentsDir));
+
+        bool started = false;
+        try { started = RockstarLauncher.StartLauncher(); }
+        catch (Exception) { /* dann startet man ihn selbst */ }
+
+        host.SetStatus(flags == 0 ? "Fertig!  Der Rockstar Launcher Fix ist durch." : "Fertig, aber nicht alles hat geklappt.", flags == 0 ? Theme.Orange : Theme.Pink);
+        NeonDialog.Show(FindForm(), RockstarLauncher.DoneText(flags, skipped, started), "Rockstar Launcher Fix", MessageBoxButtons.OK,
+            flags == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
     }
 
     async Task RunNetworkFixAsync()

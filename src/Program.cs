@@ -27,10 +27,12 @@ static class Program
         }
 
         // Admin-Hilfsmodus für den Rockstar Launcher Fix (wird mit Adminrechten gestartet)
-        if (args.Length == 1 && args[0] == RockstarLauncher.ElevatedArgument)
+        if (args.Length > 0 && args[0] == RockstarLauncher.ElevatedArgument)
         {
-            try { return SystemCommands.RunAll(RockstarLauncher.NetworkCommands()); }
-            catch (Exception) { return 1; }
+            var rest = new string[args.Length - 1];
+            Array.Copy(args, 1, rest, 0, rest.Length);
+            try { return RockstarLauncher.RunElevated(rest); }
+            catch (Exception) { return RockstarLauncher.MaxFlags; }
         }
 
         // Admin-Hilfsmodus für den Netzwerk Fix (wird mit Adminrechten gestartet)

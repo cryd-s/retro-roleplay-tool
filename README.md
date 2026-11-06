@@ -39,8 +39,9 @@ Alle Versionen (auch die exe einzeln) findest du unter [Releases](https://github
 - SaltyChat in der aktuellen Version installieren
 - TeamSpeak-Sounds dauerhaft deaktivieren oder wieder aktivieren (Sound-Paket „Sounds deactivated“, Sprache bleibt)
 - TS-Moved-nicht-Bugfix (hosts-Eintrag) aktivieren oder wieder entfernen
-- Rockstar Launcher Fix: DNS-Cache leeren, Winsock zurücksetzen und `%LOCALAPPDATA%\Rockstar Games\Launcher` leeren
-  - Danach den PC neu starten und im Launcher neu anmelden; VPN, Tailscale und eigene DNS-Filter vorher selbst ausschalten
+- Rockstar Launcher Fix: erlaubt den echten, von Rockstar signierten Launcher bei „Überwachter Ordnerzugriff“, repariert Besitzer und Rechte der Rockstar-Ordner, stellt den Rockstar-Dienst auf „Automatisch“, leert DNS-Cache und Winsock, leert `%LOCALAPPDATA%\Rockstar Games\Launcher` und startet den Launcher neu
+  - Spielstände und GTA selbst bleiben unberührt; die bisherigen Rechte werden gespeichert, in Programmordnern gibt es keine neuen Schreibrechte
+  - Danach im Launcher neu anmelden und bei Verbindungsproblemen den PC neu starten; VPN, Tailscale und eigene DNS-Filter vorher selbst ausschalten
 - Netzwerk Fix: `netsh winsock reset`, `netsh int ip reset` und `ipconfig /flushdns`, danach den PC neu starten
   - Feste IP-Adressen und eigene DNS-Einstellungen können verloren gehen; die Netzwerkdaten werden vorher in eine Textdatei gespeichert
 - FiveM als Nicht-Steam-Spiel in die Steam-Bibliothek eintragen und Steam Input dafür aktivieren, oder beides wieder entfernen
