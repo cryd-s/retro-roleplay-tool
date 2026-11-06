@@ -55,11 +55,14 @@ public class FeatureRow : NeonControl
     }
 }
 
-// Unterseite „Sonderfunktionen“: TeamSpeak 3, SaltyChat, TS-Sounds, TS-Moved-nicht-Bugfix, Rockstar Launcher Fix, FiveM in Steam, Grafik-Mods.
+// Unterseite „Sonderfunktionen“ mit zwei Reitern:
+// TeamSpeak (TeamSpeak 3, SaltyChat, TS-Sounds, TS-Moved-nicht-Bugfix) und
+// Fixes & Tools (Rockstar Launcher Fix, Netzwerk Fix, FiveM in Steam, Grafik-Mods).
 public class ExtrasPage : Panel
 {
     readonly MainForm host;
-    readonly FeatureRow ts3Row, saltyRow, soundRow, hostsRow, rockstarRow, steamRow, modRow;
+    readonly FeatureRow ts3Row, saltyRow, soundRow, hostsRow, rockstarRow, networkRow, steamRow, modRow;
+    readonly NeonButton tabTeamSpeak, tabTools;
     readonly AppSettings settings = new AppSettings(AppSettings.DefaultPath);
     ModReport modReport;                 // null = FiveM nicht gefunden oder nicht lesbar
     bool soundsAvailable, soundsDisabled;
@@ -78,7 +81,18 @@ public class ExtrasPage : Panel
         BackColor = Theme.Bg;
         int y = top;
 
-        int rowHeight = Theme.S(73), buttonWidth = Theme.S(230);   // 7 Zeilen, ohne dass das Fenster wächst
+        int rowHeight = Theme.S(84), buttonWidth = Theme.S(230);
+
+        int tabH = Theme.S(48), tabW = Theme.S(210), glow = Theme.S(6);
+        tabTeamSpeak = new NeonButton { Text = "TEAMSPEAK", Bounds = new Rectangle(margin - glow, y, tabW, tabH) };
+        tabTools = new NeonButton { Text = "FIXES & TOOLS", Bounds = new Rectangle(margin - glow + tabW + Theme.S(4), y, tabW, tabH) };
+        tabTeamSpeak.Click += delegate { ShowGroup(true); };
+        tabTools.Click += delegate { ShowGroup(false); };
+        Controls.Add(tabTeamSpeak);
+        Controls.Add(tabTools);
+        y += tabH + Theme.S(6);
+        int rowsTop = y;
+
         ts3Row = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
             "TeamSpeak 3", "Lädt die aktuelle Version von teamspeak.com, prüft sie und installiert still.");
         saltyRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
@@ -87,9 +101,13 @@ public class ExtrasPage : Panel
             "TeamSpeak-Sounds", "Schaltet alle TeamSpeak-Töne dauerhaft ab. Sprache bleibt.");
         hostsRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
             "TS-Moved-nicht-Bugfix", "Leitet " + HostsFix.Host + " in der hosts-Datei auf 127.0.0.1 um.");
+        y = rowsTop;   // zweiter Reiter: dieselbe Fläche
         rockstarRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
             "Rockstar Launcher Fix", "Setzt DNS-Cache und Winsock zurück und leert den Launcher-Cache.");
         rockstarRow.Action.Text = "FIX STARTEN";
+        networkRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
+            "Netzwerk Fix", "Setzt Winsock und TCP/IP zurück und leert den DNS-Cache.");
+        networkRow.Action.Text = "FIX STARTEN";
         steamRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
             "FiveM in Steam + Controller", "Trägt FiveM in die Steam-Bibliothek ein und aktiviert Steam Input.");
         modRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
@@ -102,9 +120,21 @@ public class ExtrasPage : Panel
         soundRow.Action.Click += async delegate { await Guard(ToggleSoundsAsync); };
         hostsRow.Action.Click += async delegate { await Guard(ToggleHostsAsync); };
         rockstarRow.Action.Click += async delegate { await Guard(RunRockstarFixAsync); };
+        networkRow.Action.Click += async delegate { await Guard(RunNetworkFixAsync); };
         steamRow.Action.Click += async delegate { await Guard(ToggleSteamAsync); };
         modRow.Action.Click += delegate { ShowModDetails(); };
         ContentHeight = y + Theme.S(12);
+        ShowGroup(true);
+    }
+
+    void ShowGroup(bool teamSpeak)
+    {
+        foreach (FeatureRow r in new[] { ts3Row, saltyRow, soundRow, hostsRow }) r.Visible = teamSpeak;
+        foreach (FeatureRow r in new[] { rockstarRow, networkRow, steamRow, modRow }) r.Visible = !teamSpeak;
+        tabTeamSpeak.Primary = teamSpeak;
+        tabTools.Primary = !teamSpeak;
+        tabTeamSpeak.Invalidate();
+        tabTools.Invalidate();
     }
 
     // Benötigte Höhe der Seite (das Hauptfenster richtet sich danach)
@@ -120,6 +150,9 @@ public class ExtrasPage : Panel
 
     public void SetButtonsEnabled(bool enabled)
     {
+        tabTeamSpeak.Enabled = enabled;
+        tabTools.Enabled = enabled;
+        networkRow.Action.Enabled = enabled && !refreshing;
         ts3Row.Action.Enabled = enabled && !refreshing;
         saltyRow.Action.Enabled = enabled && !refreshing;
         soundRow.Action.Enabled = enabled && !refreshing && soundsAvailable;
@@ -136,7 +169,7 @@ public class ExtrasPage : Panel
         if (refreshing) return;
         refreshing = true;
         SetButtonsEnabled(!host.Busy);
-        foreach (FeatureRow r in new[] { ts3Row, saltyRow, soundRow, hostsRow, rockstarRow, steamRow, modRow })
+        foreach (FeatureRow r in new[] { ts3Row, saltyRow, soundRow, hostsRow, rockstarRow, networkRow, steamRow, modRow })
         {
             r.Value = "wird geprüft …";
             r.ValueColor = Theme.Muted;
@@ -161,6 +194,7 @@ public class ExtrasPage : Panel
 
         // Rockstar Launcher (lokal, schnell)
         ShowRockstarState();
+        networkRow.Value = "danach PC neu starten";
 
         // TeamSpeak 3
         string ts3Installed = Ts3.InstalledVersion();
@@ -266,6 +300,31 @@ public class ExtrasPage : Panel
         }
         host.SetStatus("Fertig!  Bitte jetzt den PC neu starten.", Theme.Orange);
         NeonDialog.Show(FindForm(), RockstarLauncher.DoneText(skipped), "Rockstar Launcher Fix", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    async Task RunNetworkFixAsync()
+    {
+        if (NeonDialog.Show(FindForm(), NetworkFix.ConfirmText, "Netzwerk Fix", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+            return;
+
+        host.SetBusy(true);
+        host.SetStatus("Netzwerkdaten werden gespeichert …", Theme.Text);
+        string backup = await Task.Run(() =>
+        {
+            try { return NetworkFix.SaveSnapshot(NetworkFix.BackupDir); }
+            catch (Exception) { return null; }
+        });
+        if (backup == null &&
+            NeonDialog.Show(FindForm(), "Die Netzwerkdaten konnten nicht gespeichert werden.\n\nTrotzdem fortfahren?", "Netzwerk Fix",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+            return;
+
+        host.SetStatus("Bitte die Windows-Admin-Abfrage bestätigen …", Theme.Text);
+        int code = await RunElevatedAsync(NetworkFix.ElevatedArgument);
+
+        host.SetStatus(code == 0 ? "Fertig!  Bitte jetzt den PC neu starten." : "Fehler gemeldet. Bitte den PC trotzdem neu starten.", code == 0 ? Theme.Orange : Theme.Pink);
+        NeonDialog.Show(FindForm(), NetworkFix.DoneText(code, backup), "Netzwerk Fix", MessageBoxButtons.OK,
+            code == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
     }
 
     // Das Programm startet sich selbst kurz mit Adminrechten, nur für diesen Schritt.

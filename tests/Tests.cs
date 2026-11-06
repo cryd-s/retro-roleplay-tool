@@ -31,6 +31,7 @@ static class Tests
             ModCheckTests();
             Ts3SoundTests();
             RockstarTests();
+            NetworkFixTests();
             DownloadTests();
         }
         finally
@@ -843,6 +844,41 @@ static class Tests
         Equal(BitConverter.ToString(expected), BitConverter.ToString(actual), what);
     }
 
+    static void NetworkFixTests()
+    {
+        Run("Netzwerk Fix: genau die drei Befehle in der richtigen Reihenfolge", () =>
+        {
+            string netsh = Path.Combine(Environment.SystemDirectory, "netsh.exe");
+            string ipconfig = Path.Combine(Environment.SystemDirectory, "ipconfig.exe");
+            var commands = NetworkFix.Commands();
+            Equal(3, commands.Count, "Anzahl");
+            Equal(netsh, commands[0].Key, "1 Programm");
+            Equal("winsock reset", commands[0].Value, "1");
+            Equal(netsh, commands[1].Key, "2 Programm");
+            Equal("int ip reset", commands[1].Value, "2");
+            Equal(ipconfig, commands[2].Key, "3 Programm");
+            Equal("/flushdns", commands[2].Value, "3");
+        });
+
+        Run("Netzwerk Fix: Sicherung liest nur und landet als Textdatei im Ordner", () =>
+        {
+            string dir = Path.Combine(NewDir("netfix"), "Sicherung Netzwerk");
+            string file = NetworkFix.SaveSnapshot(dir);
+            True(File.Exists(file), "Datei da");
+            Equal(dir, Path.GetDirectoryName(file), "Ordner");
+            True(file.EndsWith(".txt"), "Textdatei");
+            True(new FileInfo(file).Length > 50, "nicht leer");
+        });
+
+        Run("Netzwerk Fix: Fertig-Text nennt Fehlercode und Sicherung", () =>
+        {
+            True(NetworkFix.DoneText(0, null).StartsWith("Alle Befehle wurden ausgeführt"), "ok");
+            True(!NetworkFix.DoneText(0, null).Contains("Netzwerkdaten"), "ohne Sicherung");
+            True(NetworkFix.DoneText(0, @"C:\a.txt").Contains(@"C:\a.txt"), "mit Sicherung");
+            True(NetworkFix.DoneText(5, null).Contains("Code 5"), "Fehlercode");
+        });
+    }
+
     static void RockstarTests()
     {
         Run("Rockstar: Cache-Ordner ist genau der Launcher-Ordner", () =>
@@ -866,8 +902,8 @@ static class Tests
             string cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe");
             string marker = Path.Combine(NewDir("rockstarrun"), "lief.txt");
             Func<string, KeyValuePair<string, string>> c = a => new KeyValuePair<string, string>(cmd, "/c " + a);
-            Equal(0, RockstarLauncher.RunAll(new[] { c("exit 0"), c("exit 0") }), "alles gut");
-            Equal(5, RockstarLauncher.RunAll(new[] { c("exit 5"), c("echo x> \"" + marker + "\""), c("exit 7") }), "erster Fehler");
+            Equal(0, SystemCommands.RunAll(new[] { c("exit 0"), c("exit 0") }), "alles gut");
+            Equal(5, SystemCommands.RunAll(new[] { c("exit 5"), c("echo x> \"" + marker + "\""), c("exit 7") }), "erster Fehler");
             True(File.Exists(marker), "zweiter Befehl lief trotzdem");
         });
 

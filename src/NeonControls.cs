@@ -146,7 +146,7 @@ public class NeonButton : NeonControl
     void DrawText(Graphics g, RectangleF r, Color c)
     {
         TextRenderer.DrawText(g, Text, Font, Rectangle.Round(r), c,
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
     }
 }
 

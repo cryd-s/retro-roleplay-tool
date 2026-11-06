@@ -48,23 +48,6 @@ public static class RockstarLauncher
         };
     }
 
-    // 0 = alles geklappt, sonst der Fehlercode des ersten fehlgeschlagenen Befehls. Läuft alle Befehle durch.
-    public static int RunAll(IEnumerable<KeyValuePair<string, string>> commands)
-    {
-        const int TimeoutMs = 30000;
-        const int TimedOut = -1;
-        int result = 0;
-        foreach (KeyValuePair<string, string> command in commands)
-        {
-            var psi = new ProcessStartInfo(command.Key, command.Value) { CreateNoWindow = true, UseShellExecute = false };
-            int code;
-            using (Process p = Process.Start(psi))
-                code = p.WaitForExit(TimeoutMs) ? p.ExitCode : TimedOut;
-            if (result == 0) result = code;
-        }
-        return result;
-    }
-
     // Der Prozess heißt schlicht „Launcher“. Das können auch andere Programme sein, deshalb zählt dort der Pfad.
     public static bool IsLauncherProcess(string name, string exePath, string installDir)
     {

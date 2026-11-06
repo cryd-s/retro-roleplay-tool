@@ -114,7 +114,7 @@ public class MainForm : Form
         {
             new[] { "CACHE CLEANER", "FiveM-Cache, Shader-Cache und %TEMP% leeren, Stable-Kanal setzen", "" },
             new[] { "GTA-EINSTELLUNGEN", "Texture Budget, FXAA, VSync, Dichte, Distanz · mit Zurück-Funktion", "" },
-            new[] { "SONDERFUNKTIONEN", "TeamSpeak, SaltyChat, TS-Fixes, Rockstar Launcher Fix, FiveM in Steam, Grafik-Mods", "" },
+            new[] { "SONDERFUNKTIONEN", "TeamSpeak, SaltyChat, Rockstar- und Netzwerk-Fix, FiveM in Steam, Grafik-Mods", "" },
             new[] { "DISCORD BOTS", "Retro RP und Retro Business", "" },
             new[] { "LINKS ZU RETRO", "UCP, Regelwerk, Discord, Entbannungsdiscord", "" },
         };
