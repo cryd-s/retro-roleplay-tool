@@ -430,6 +430,19 @@ public class SteamStatus
 // FiveM als Nicht-Steam-Spiel eintragen und Steam Input für diesen Eintrag einschalten.
 public static class SteamLibrary
 {
+    public const string StartViaSteamHint =
+        "WICHTIG: Danach musst du FiveM immer über Steam starten. Startest du es wie bisher, funktioniert der Controller nicht.";
+
+    public const string SetupDoneTitle = "WICHTIG: FiveM über Steam starten!";
+
+    public const string SetupDoneText =
+        "Der Controller funktioniert nur, wenn du FiveM über Steam startest.\n\n" +
+        "Startest du FiveM wie bisher über die normale Verknüpfung, funktioniert der Controller nicht.\n\n" +
+        "So startest du es: Steam öffnen → Bibliothek → FiveM → Spielen\n\n" +
+        "Reagiert der Controller trotzdem nicht: In Steam unter Einstellungen → Controller beim Desktop-Layout " +
+        "die Gamepad-Vorlage wählen. FiveM unterstützt Steam Input nicht offiziell, deshalb kann das je nach " +
+        "Controller unterschiedlich gut funktionieren.";
+
     const string ControllerKey = "UseSteamControllerConfig";
     const string ControllerForceOn = "2";      // laut Steam-Community: 0 = aus, 1 = Standard, 2 = erzwungen an
     const long SteamId64Base = 76561197960265728L;

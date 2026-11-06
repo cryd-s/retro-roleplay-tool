@@ -44,6 +44,7 @@ Alle Versionen (auch die exe einzeln) findest du unter [Releases](https://github
 - Netzwerk Fix: `netsh winsock reset`, `netsh int ip reset` und `ipconfig /flushdns`, danach den PC neu starten
   - Feste IP-Adressen und eigene DNS-Einstellungen können verloren gehen; die Netzwerkdaten werden vorher in eine Textdatei gespeichert
 - FiveM als Nicht-Steam-Spiel in die Steam-Bibliothek eintragen und Steam Input dafür aktivieren, oder beides wieder entfernen
+  - **FiveM muss danach immer über Steam gestartet werden, sonst funktioniert der Controller nicht**
   - Steam wird dafür normal geschlossen und danach wieder gestartet; vorher wird der aktuelle Stand gespeichert
   - **Noch nicht mit echtem Steam getestet.** FiveM unterstützt Steam Input nicht offiziell, der Controller funktioniert also vielleicht nicht in jedem Fall
 

@@ -109,7 +109,7 @@ public class ExtrasPage : Panel
             "Netzwerk Fix", "Setzt Winsock und TCP/IP zurück und leert den DNS-Cache.");
         networkRow.Action.Text = "FIX STARTEN";
         steamRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
-            "FiveM in Steam + Controller", "Trägt FiveM in die Steam-Bibliothek ein und aktiviert Steam Input.");
+            "FiveM in Steam + Controller", "Aktiviert den Controller über Steam. FiveM muss danach immer über Steam starten.");
         modRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
             "Grafik-Mods prüfen", "Zeigt ReShade, ASI-Plugins, fremde DLLs und Mods. Ändert nichts.");
         modRow.Action.Text = "DETAILS";
@@ -237,8 +237,8 @@ public class ExtrasPage : Panel
             steamReady = s.InSteam && s.ControllerOn;
             if (steamReady)
             {
-                steamRow.Value = "in Steam  ✔  Controller aktiv";
-                steamRow.ValueColor = Theme.Good;
+                steamRow.Value = "Controller aktiv  ✔  FiveM immer über Steam starten!";
+                steamRow.ValueColor = Theme.Orange;
                 steamRow.Action.Text = "ENTFERNEN";
                 steamRow.Action.Primary = false;
             }
@@ -666,6 +666,7 @@ public class ExtrasPage : Panel
         string text = remove
             ? "FiveM wird aus der Steam-Bibliothek entfernt, die Controller-Einstellung dafür ebenfalls.\n\n" + restart + "\n\nFortfahren?"
             : "FiveM wird als Nicht-Steam-Spiel in die Steam-Bibliothek eingetragen und Steam Input dafür aktiviert.\n\n" +
+              SteamLibrary.StartViaSteamHint + "\n\n" +
               restart + "\n\nDer aktuelle Stand wird vorher gespeichert. Fortfahren?";
         if (!Confirm(text, "FiveM in Steam")) return;
 
@@ -702,14 +703,8 @@ public class ExtrasPage : Panel
             host.SetStatus("Fertig!  FiveM wurde aus der Steam-Bibliothek entfernt.", Theme.Orange);
             return;
         }
-        host.SetStatus("Fertig!  FiveM steht in der Steam-Bibliothek, Steam Input ist aktiviert.", Theme.Orange);
-        NeonDialog.Show(FindForm(),
-            "FiveM steht jetzt in deiner Steam-Bibliothek.\n\n" +
-            "Damit der Controller geht, FiveM ab jetzt über Steam starten.\n\n" +
-            "Reagiert der Controller im Spiel nicht: In Steam unter Einstellungen → Controller beim Desktop-Layout " +
-            "die Gamepad-Vorlage wählen.\n\nFiveM unterstützt Steam Input nicht offiziell, deshalb kann das je nach " +
-            "Controller unterschiedlich gut funktionieren.",
-            "FiveM in Steam", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        host.SetStatus("Fertig!  Wichtig: FiveM ab jetzt immer über Steam starten,\nsonst funktioniert der Controller nicht.", Theme.Orange);
+        NeonDialog.Show(FindForm(), SteamLibrary.SetupDoneText, SteamLibrary.SetupDoneTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
     }
 
     async Task ToggleHostsAsync()

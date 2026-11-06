@@ -32,6 +32,7 @@ static class Tests
             Ts3SoundTests();
             RockstarTests();
             NetworkFixTests();
+            SteamHintTests();
             DownloadTests();
         }
         finally
@@ -842,6 +843,16 @@ static class Tests
     static void SameBytes(byte[] expected, byte[] actual, string what)
     {
         Equal(BitConverter.ToString(expected), BitConverter.ToString(actual), what);
+    }
+
+    static void SteamHintTests()
+    {
+        Run("Steam: Hinweis auf den Start über Steam steht vorn und ist eindeutig", () =>
+        {
+            True(SteamLibrary.SetupDoneTitle.Contains("über Steam starten"), "Titel");
+            True(SteamLibrary.SetupDoneText.StartsWith("Der Controller funktioniert nur, wenn du FiveM über Steam startest"), "erste Zeile");
+            True(SteamLibrary.StartViaSteamHint.StartsWith("WICHTIG"), "Abfrage vorher");
+        });
     }
 
     static void NetworkFixTests()
