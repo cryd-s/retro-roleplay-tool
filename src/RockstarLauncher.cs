@@ -38,7 +38,7 @@ public static class RockstarLauncher
         "Der Fix macht Folgendes:\n\n" +
         "•  Launcher schließen und bei „Überwachter Ordnerzugriff“ in Windows Defender erlauben\n" +
         "•  Besitzer und Rechte der Rockstar-Ordner reparieren (die bisherigen Rechte werden gespeichert)\n" +
-        "•  Rockstar-Dienst auf „Automatisch“ stellen und starten\n" +
+        "•  Rockstar-Dienst auf „Automatisch“ stellen\n" +
         "•  DNS-Cache leeren und Winsock zurücksetzen\n" +
         "•  Launcher-Cache löschen und den Launcher neu starten\n\n" +
         "Spielstände und GTA selbst bleiben unberührt. Du musst dich im Launcher neu anmelden.\n\n" +
@@ -46,7 +46,7 @@ public static class RockstarLauncher
 
     public const string GameRunningText = "FiveM oder GTA V läuft gerade. Bitte erst schließen und den Fix dann starten.";
 
-    public static string DoneText(int flags, int filesSkipped, bool launcherStarted)
+    public static string DoneText(int flags, int filesSkipped, bool launcherStarted, string logFile = null)
     {
         var text = new StringBuilder(flags == 0 ? "Der Fix ist durch." : "Der Fix ist durch, aber nicht alles hat geklappt:");
         if ((flags & NetworkFailed) != 0) text.Append("\n•  DNS-Cache oder Winsock konnten nicht zurückgesetzt werden");
@@ -61,6 +61,7 @@ public static class RockstarLauncher
         if (filesSkipped > 0)
             text.Append("\n\n" + filesSkipped + (filesSkipped == 1 ? " Datei war" : " Dateien waren") +
                         " noch in Benutzung und wurde" + (filesSkipped == 1 ? "" : "n") + " nicht gelöscht.");
+        if (flags != 0 && logFile != null) text.Append("\n\nDetails stehen im Protokoll:\n" + logFile);
         return text.ToString();
     }
 
@@ -139,20 +140,43 @@ public static class RockstarLauncher
         if (args.Length != 5 || !IsValidElevatedInput(args[0], args[1], args[2], args[3], args[4])) return InvalidArguments;
         string userSid = args[0], backupDir = args[4];
         int flags = 0;
+        Action<string> log = text => WriteLog(backupDir, text);
 
+        log("Fix gestartet");
+        Try(() => SystemCommands.RunAll(ServiceStopCommands()));   // läuft er nicht, ist das kein Fehler
         CloseLauncher();
-        if (Try(() => SystemCommands.RunAll(NetworkCommands())) != 0) flags |= NetworkFailed;
-        if (!Try(() => AllowInControlledFolderAccess(AllowedAppCandidates(InstallDir(), SocialClubDir())))) flags |= DefenderFailed;
+        int network = Try(() => SystemCommands.RunAll(NetworkCommands()));
+        log("Netzwerk: Code " + network);
+        if (network != 0) flags |= NetworkFailed;
+        bool allowed = Try(() => AllowInControlledFolderAccess(AllowedAppCandidates(InstallDir(), SocialClubDir())));
+        log("Defender-Freigabe: " + (allowed ? "gesetzt" : "nicht gesetzt"));
+        if (!allowed) flags |= DefenderFailed;
 
         List<RepairTarget> targets = PlanTargets(userSid, args[1], args[2], args[3],
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
             Environment.GetEnvironmentVariable("ProgramFiles(x86)"), InstallDir(), SocialClubDir());
-        if (!Try(() => RepairAll(targets, backupDir))) flags |= PermissionsFailed;
+        if (!Try(() => RepairAll(targets, backupDir, log))) flags |= PermissionsFailed;
 
-        if (Try(() => SystemCommands.RunAll(ServiceConfigCommands())) != 0) flags |= ServiceFailed;
-        else Try(() => SystemCommands.RunAll(ServiceStartCommands()));   // läuft er schon, ist das kein Fehler
+        // Nur einstellen, nicht starten: Der Dienst würde sonst Dateien im Cache sperren, der danach geleert wird.
+        // Der Launcher startet ihn selbst.
+        int service = Try(() => SystemCommands.RunAll(ServiceConfigCommands()));
+        log("Dienst einstellen: Code " + service);
+        if (service != 0) flags |= ServiceFailed;
+        log("Admin-Teil fertig, Ergebnis " + flags);
         return flags;
+    }
+
+    public const string LogFileName = "Protokoll.txt";
+
+    static void WriteLog(string backupDir, string text)
+    {
+        try
+        {
+            Directory.CreateDirectory(backupDir);
+            File.AppendAllText(Path.Combine(backupDir, LogFileName), DateTime.Now.ToString("HH:mm:ss") + "  " + text + "\r\n");
+        }
+        catch (Exception) { /* das Protokoll darf den Fix nie aufhalten */ }
     }
 
     static int Try(Func<int> action)
@@ -188,11 +212,11 @@ public static class RockstarLauncher
         };
     }
 
-    public static List<KeyValuePair<string, string>> ServiceStartCommands()
+    public static List<KeyValuePair<string, string>> ServiceStopCommands()
     {
         return new List<KeyValuePair<string, string>>
         {
-            new KeyValuePair<string, string>(Path.Combine(Environment.SystemDirectory, "sc.exe"), "start \"" + ServiceName + "\""),
+            new KeyValuePair<string, string>(Path.Combine(Environment.SystemDirectory, "sc.exe"), "stop \"" + ServiceName + "\""),
         };
     }
 
@@ -284,7 +308,7 @@ public static class RockstarLauncher
         return commands;
     }
 
-    static bool RepairAll(List<RepairTarget> targets, string backupDir)
+    public static bool RepairAll(List<RepairTarget> targets, string backupDir, Action<string> log = null)
     {
         bool ok = true;
         int index = 0;
@@ -292,35 +316,91 @@ public static class RockstarLauncher
         {
             if (!Directory.Exists(target.Path)) continue;
             index++;
-            if (!Repair(target, backupDir, index)) ok = false;
+            if (!Repair(target, backupDir, index, log)) ok = false;
         }
         return ok;
     }
 
-    // Verknüpfte Ordner könnten aus dem Rockstar-Ordner herausführen: Dann wird dieser Ordner nicht angefasst.
-    // Ohne Sicherung der bisherigen Rechte wird ebenfalls nichts geändert.
-    public static bool Repair(RepairTarget target, string backupDir, int index)
+    // Ohne Sicherung der bisherigen Rechte wird nichts geändert.
+    // Verknüpfte Ordner könnten aus dem Rockstar-Ordner herausführen („/setowner /T“ folgt ihnen): Dann bleibt der Ordner unangetastet.
+    // Ein Fehler hier stoppt die übrigen Ordner nicht. Der Exit-Code von icacls ist auch bei Fehlern oft 0, deshalb zählt am Ende die Probe.
+    public static bool Repair(RepairTarget target, string backupDir, int index, Action<string> log = null)
     {
-        if (target.RootOnly ? IsLinked(target.Path) : ContainsLinkedFolder(target.Path)) return false;
+        Action<string> note = text => { if (log != null) log(target.Path + ": " + text); };
+        try
+        {
+            Directory.CreateDirectory(backupDir);
+            string backup = Path.Combine(backupDir, "Rechte " + index + ".txt");
+            string save = "\"" + target.Path + "\" /save \"" + backup + "\"" + (target.RootOnly ? "" : " /T") + " /C /Q";
+            string icacls = Path.Combine(Environment.SystemDirectory, "icacls.exe");
+            SystemCommands.RunAll(new[] { new KeyValuePair<string, string>(icacls, save) }, AclTimeoutMs);
+            if (!File.Exists(backup)) { note("Sicherung fehlgeschlagen, nichts geändert"); return false; }
+            File.AppendAllText(Path.Combine(backupDir, "Liste.txt"),
+                "Rechte " + index + ".txt = " + target.Path + "\r\nZurück: icacls \"" + Path.GetDirectoryName(target.Path) + "\" /restore \"" + backup + "\"\r\n\r\n");
 
-        Directory.CreateDirectory(backupDir);
-        string backup = Path.Combine(backupDir, "Rechte " + index + ".txt");
-        string save = "\"" + target.Path + "\" /save \"" + backup + "\"" + (target.RootOnly ? "" : " /T") + " /C /Q";
+            if (target.RootOnly ? IsLinked(target.Path) : ContainsLinkedFolder(target.Path, dir => Unlock(target, dir)))
+            {
+                note("enthält einen verknüpften Ordner, nichts repariert");
+                return false;
+            }
+
+            int code = SystemCommands.RunAll(AclCommands(target), AclTimeoutMs);
+            if (code != 0) { note("icacls meldet Code " + code); return false; }
+            if (!target.RootOnly && !IsTreeReadable(target.Path)) { note("danach noch nicht vollständig lesbar"); return false; }
+            note("repariert");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            note(ex.GetType().Name + ": " + ex.Message);
+            return false;
+        }
+    }
+
+    // Macht einen gesperrten Ordner lesbar, und nur diesen einen (ohne /T): Sonst ließe sich nicht prüfen, was darin liegt.
+    static void Unlock(RepairTarget target, string dir)
+    {
         string icacls = Path.Combine(Environment.SystemDirectory, "icacls.exe");
-        SystemCommands.RunAll(new[] { new KeyValuePair<string, string>(icacls, save) }, AclTimeoutMs);
-        if (!File.Exists(backup)) return false;
-        File.AppendAllText(Path.Combine(backupDir, "Liste.txt"),
-            "Rechte " + index + ".txt = " + target.Path + "\r\nZurück: icacls \"" + Path.GetDirectoryName(target.Path) + "\" /restore \"" + backup + "\"\r\n\r\n");
-
-        return SystemCommands.RunAll(AclCommands(target), AclTimeoutMs) == 0;
+        string quoted = "\"" + dir + "\"";
+        SystemCommands.RunAll(new[]
+        {
+            new KeyValuePair<string, string>(icacls, quoted + " /setowner " + target.OwnerSid + " /C /Q"),
+            new KeyValuePair<string, string>(icacls, quoted + (target.ResetFirst ? " /reset /C /Q" : " /grant " + SidAdmins + ":(RX) /C /Q")),
+        }, AclTimeoutMs);
     }
 
     public static bool ContainsLinkedFolder(string dir)
     {
+        return ContainsLinkedFolder(dir, null);
+    }
+
+    // unlock = was bei einem gesperrten Ordner zu tun ist; danach wird einmal neu versucht.
+    static bool ContainsLinkedFolder(string dir, Action<string> unlock)
+    {
         if (IsLinked(dir)) return true;
-        foreach (string sub in Directory.GetDirectories(dir))
-            if (ContainsLinkedFolder(sub)) return true;
+        string[] subs;
+        try { subs = Directory.GetDirectories(dir); }
+        catch (UnauthorizedAccessException)
+        {
+            if (unlock == null) throw;
+            unlock(dir);
+            subs = Directory.GetDirectories(dir);
+        }
+        foreach (string sub in subs)
+            if (ContainsLinkedFolder(sub, unlock)) return true;
         return false;
+    }
+
+    public static bool IsTreeReadable(string dir)
+    {
+        try
+        {
+            Directory.GetFiles(dir);
+            foreach (string sub in Directory.GetDirectories(dir))
+                if (!IsTreeReadable(sub)) return false;
+            return true;
+        }
+        catch (UnauthorizedAccessException) { return false; }
     }
 
     static bool IsLinked(string dir)

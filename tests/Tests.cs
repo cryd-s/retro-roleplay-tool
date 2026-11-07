@@ -129,6 +129,27 @@ static class Tests
     // ---------------------------------------------------------------- Cleaner
 
     // Verweigert dem aktuellen Benutzer das Ändern von Attributen (wie bei fremden/geschützten Dateien in %TEMP%).
+    // Eine erhöhte Git-Bash aktiviert das Backup-Recht und erbt es an diesen Prozess weiter: Sperren greifen dann nicht,
+    // Tests mit Sperren könnten nichts prüfen. Das Tool und tools\release.ps1 laufen ohne dieses Recht.
+    static bool? denyRulesApply;
+
+    static bool DenyRulesApply()
+    {
+        if (denyRulesApply == null)
+        {
+            string dir = NewDir("denyprobe");
+            string sid = System.Security.Principal.WindowsIdentity.GetCurrent().User.Value;
+            string icacls = Path.Combine(Environment.SystemDirectory, "icacls.exe");
+            Equal(0, SystemCommands.RunAll(new[] { new KeyValuePair<string, string>(icacls, "\"" + dir + "\" /deny *" + sid + ":(RD)") }), "Probe-Sperre");
+            try { Directory.GetFiles(dir); denyRulesApply = false; }
+            catch (UnauthorizedAccessException) { denyRulesApply = true; }
+            SystemCommands.RunAll(new[] { new KeyValuePair<string, string>(icacls, "\"" + dir + "\" /remove:d *" + sid) });
+        }
+        if (denyRulesApply == false)
+            Console.WriteLine("      HINWEIS: Sperren greifen in dieser Shell nicht (Backup-Recht aktiv), Test übersprungen. Bitte in PowerShell prüfen.");
+        return denyRulesApply == true;
+    }
+
     static void DenyWriteAttributes(string path, bool deny)
     {
         string sid = System.Security.Principal.WindowsIdentity.GetCurrent().User.Value;
@@ -149,6 +170,7 @@ static class Tests
     {
         Run("Leeren: Zugriff verweigert beim Attribut-Setzen bricht nicht ab", () =>
         {
+            if (!DenyRulesApply()) return;
             string dir = NewDir("denied");
             string lockedDir = Path.Combine(dir, "a_geschuetzt");
             string lockedFile = Path.Combine(dir, "b_schreibgeschuetzt.txt");
@@ -1094,7 +1116,7 @@ static class Tests
         Run("Rockstar: Dienst wird auf Automatisch gestellt", () =>
         {
             Equal("config \"Rockstar Service\" start= auto obj= LocalSystem", RockstarLauncher.ServiceConfigCommands()[0].Value, "config");
-            Equal("start \"Rockstar Service\"", RockstarLauncher.ServiceStartCommands()[0].Value, "start");
+            Equal("stop \"Rockstar Service\"", RockstarLauncher.ServiceStopCommands()[0].Value, "stop");
         });
 
         Run("Rockstar: Reparatur entfernt Sperren, sichert Rechte und lässt Dateien in Ruhe", () =>
@@ -1134,8 +1156,67 @@ static class Tests
             True(RockstarLauncher.ContainsLinkedFolder(dir), "erkannt");
             string backup = Path.Combine(root, "Sicherung");
             var target = new RepairTarget { Path = dir, OwnerSid = "*S-1-5-32-544", ResetFirst = true, Grants = new[] { "*S-1-5-18:(OI)(CI)F" } };
+            string before = new DirectoryInfo(dir).GetAccessControl().GetSecurityDescriptorSddlForm(System.Security.AccessControl.AccessControlSections.All);
+            string outsideBefore = new DirectoryInfo(outside).GetAccessControl().GetSecurityDescriptorSddlForm(System.Security.AccessControl.AccessControlSections.All);
             True(!RockstarLauncher.Repair(target, backup, 1), "abgelehnt");
-            True(!Directory.Exists(backup), "nichts begonnen");
+            Equal(before, new DirectoryInfo(dir).GetAccessControl().GetSecurityDescriptorSddlForm(System.Security.AccessControl.AccessControlSections.All), "Ordner unverändert");
+            Equal(outsideBefore, new DirectoryInfo(outside).GetAccessControl().GetSecurityDescriptorSddlForm(System.Security.AccessControl.AccessControlSections.All), "Ziel unverändert");
+        });
+
+        Run("Rockstar: Gesperrter Unterordner wird repariert statt abzustürzen", () =>
+        {
+            if (!DenyRulesApply()) return;
+            string root = NewDir("rockstarlocked");
+            string dir = Path.Combine(root, "Rockstar Games");
+            string locked = Path.Combine(dir, "GTA V");
+            Directory.CreateDirectory(Path.Combine(locked, "Tiefer"));
+            string file = Path.Combine(locked, "Tiefer", "save.dat");
+            File.WriteAllText(file, "Spielstand");
+            string sid = System.Security.Principal.WindowsIdentity.GetCurrent().User.Value;
+            string icacls = Path.Combine(Environment.SystemDirectory, "icacls.exe");
+            Equal(0, SystemCommands.RunAll(new[] { new KeyValuePair<string, string>(icacls, "\"" + locked + "\" /deny *" + sid + ":(RD)") }), "Sperre gesetzt");
+            True(!RockstarLauncher.IsTreeReadable(dir), "vorher gesperrt");
+
+            var log = new List<string>();
+            var target = new RepairTarget { Path = dir, OwnerSid = "*" + sid, ResetFirst = true, Grants = new[] { "*" + sid + ":(OI)(CI)F" } };
+            True(RockstarLauncher.Repair(target, Path.Combine(root, "Sicherung"), 1, log.Add), "repariert");
+
+            True(RockstarLauncher.IsTreeReadable(dir), "danach lesbar");
+            Equal("Spielstand", File.ReadAllText(file), "Inhalt unverändert");
+            True(log.Count == 1 && log[0].EndsWith("repariert"), "im Protokoll");
+        });
+
+        Run("Rockstar: Nicht reparierbarer Ordner meldet Fehler und stoppt die anderen nicht", () =>
+        {
+            if (!DenyRulesApply()) return;
+            string root = NewDir("rockstarpartial");
+            string bad = Path.Combine(root, "A", "Rockstar Games");
+            string good = Path.Combine(root, "B", "Rockstar Games");
+            string locked = Path.Combine(bad, "Gesperrt");
+            Directory.CreateDirectory(locked);
+            Directory.CreateDirectory(good);
+            string sid = System.Security.Principal.WindowsIdentity.GetCurrent().User.Value;
+            string icacls = Path.Combine(Environment.SystemDirectory, "icacls.exe");
+            Equal(0, SystemCommands.RunAll(new[] { new KeyValuePair<string, string>(icacls, "\"" + locked + "\" /deny *" + sid + ":(RD)") }), "Sperre gesetzt");
+
+            // Ohne Zurücksetzen bleibt die Sperre: icacls meldet trotzdem Code 0, die Probe muss es merken.
+            var log = new List<string>();
+            var targets = new List<RepairTarget>
+            {
+                new RepairTarget { Path = bad, OwnerSid = "*" + sid, Grants = new[] { "*" + sid + ":(OI)(CI)R" } },
+                new RepairTarget { Path = Path.Combine(root, "Fehlt"), OwnerSid = "*" + sid, Grants = new[] { "*" + sid + ":(OI)(CI)R" } },
+                new RepairTarget { Path = good, OwnerSid = "*" + sid, ResetFirst = true, Grants = new[] { "*" + sid + ":(OI)(CI)F" } },
+            };
+            True(!RockstarLauncher.RepairAll(targets, Path.Combine(root, "Sicherung"), log.Add), "Gesamtergebnis ist kein Erfolg");
+            Equal(2, log.Count, "beide vorhandenen Ordner bearbeitet");
+            True(log[1].StartsWith(good) && log[1].EndsWith("repariert"), "zweiter Ordner trotzdem repariert");
+            Equal(0, SystemCommands.RunAll(new[] { new KeyValuePair<string, string>(icacls, "\"" + locked + "\" /remove:d *" + sid) }), "Sperre entfernt");
+        });
+
+        Run("Rockstar: Protokoll wird nur bei Problemen im Fertig-Text genannt", () =>
+        {
+            True(!RockstarLauncher.DoneText(0, 0, true, @"C:\p.txt").Contains(@"C:\p.txt"), "alles gut");
+            True(RockstarLauncher.DoneText(RockstarLauncher.PermissionsFailed, 0, true, @"C:\p.txt").Contains(@"C:\p.txt"), "bei Fehler");
         });
 
         Run("Rockstar: Leeren entfernt den Inhalt, der Ordner daneben bleibt", () =>

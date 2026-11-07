@@ -291,7 +291,8 @@ public class ExtrasPage : Panel
             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            backupDir));
+            backupDir),
+            () => host.SetStatus("Der Fix läuft, das kann ein bis zwei Minuten dauern …", Theme.Text));
         if (flags < 0 || flags > RockstarLauncher.MaxFlags)
             throw new Exception("Der Fix konnte nicht gestartet werden (Code " + flags + "). Es wurde nichts geändert.");
 
@@ -311,7 +312,7 @@ public class ExtrasPage : Panel
         catch (Exception) { /* dann startet man ihn selbst */ }
 
         host.SetStatus(flags == 0 ? "Fertig!  Der Rockstar Launcher Fix ist durch." : "Fertig, aber nicht alles hat geklappt.", flags == 0 ? Theme.Orange : Theme.Pink);
-        NeonDialog.Show(FindForm(), RockstarLauncher.DoneText(flags, skipped, started), "Rockstar Launcher Fix", MessageBoxButtons.OK,
+        NeonDialog.Show(FindForm(), RockstarLauncher.DoneText(flags, skipped, started, Path.Combine(backupDir, RockstarLauncher.LogFileName)), "Rockstar Launcher Fix", MessageBoxButtons.OK,
             flags == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
     }
 
@@ -341,7 +342,8 @@ public class ExtrasPage : Panel
     }
 
     // Das Programm startet sich selbst kurz mit Adminrechten, nur für diesen Schritt.
-    static Task<int> RunElevatedAsync(string arguments)
+    // onConfirmed läuft im Fenster-Thread, sobald die Admin-Abfrage bestätigt ist.
+    Task<int> RunElevatedAsync(string arguments, Action onConfirmed = null)
     {
         var psi = new ProcessStartInfo(Application.ExecutablePath, arguments)
         {
@@ -353,6 +355,7 @@ public class ExtrasPage : Panel
         {
             using (Process p = Process.Start(psi))
             {
+                if (onConfirmed != null) BeginInvoke(onConfirmed);
                 p.WaitForExit();
                 return p.ExitCode;
             }
