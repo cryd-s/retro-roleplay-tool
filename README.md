@@ -37,6 +37,7 @@ Alle Versionen (auch die exe einzeln) findest du unter [Releases](https://github
 **Sonderfunktionen**
 - TeamSpeak 3 in der aktuellen Version installieren/aktualisieren (offizieller Download mit Prüfsummen-Check)
 - SaltyChat in der aktuellen Version installieren
+- SaltyChat DNS Fix: stellt die aktive Netzwerkverbindung auf Google DNS (IPv4 `8.8.8.8` / `8.8.4.4`, IPv6 `2001:4860:4860::8888` / `2001:4860:4860::8844`); die bisherigen Einstellungen werden gespeichert und lassen sich wiederherstellen
 - TeamSpeak-Sounds dauerhaft deaktivieren oder wieder aktivieren (Sound-Paket „Sounds deactivated“, Sprache bleibt)
 - TS-Moved-nicht-Bugfix (hosts-Eintrag) aktivieren oder wieder entfernen
 - Rockstar Launcher Fix: erlaubt den echten, von Rockstar signierten Launcher bei „Überwachter Ordnerzugriff“, repariert Besitzer und Rechte der Rockstar-Ordner, stellt den Rockstar-Dienst auf „Automatisch“, leert DNS-Cache und Winsock, leert `%LOCALAPPDATA%\Rockstar Games\Launcher` und startet den Launcher neu

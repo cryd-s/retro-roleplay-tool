@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Threading.Tasks;
@@ -56,12 +57,14 @@ public class FeatureRow : NeonControl
 }
 
 // Unterseite „Sonderfunktionen“ mit zwei Reitern:
-// TeamSpeak (TeamSpeak 3, SaltyChat, TS-Sounds, TS-Moved-nicht-Bugfix) und
+// TeamSpeak (TeamSpeak 3, SaltyChat, SaltyChat DNS Fix, TS-Sounds, TS-Moved-nicht-Bugfix) und
 // Fixes & Tools (Rockstar Launcher Fix, Netzwerk Fix, FiveM in Steam, Grafik-Mods).
 public class ExtrasPage : Panel
 {
     readonly MainForm host;
-    readonly FeatureRow ts3Row, saltyRow, soundRow, hostsRow, rockstarRow, networkRow, steamRow, modRow;
+    readonly FeatureRow ts3Row, saltyRow, dnsRow, soundRow, hostsRow, rockstarRow, networkRow, steamRow, modRow;
+    List<DnsAdapter> dnsAdapters = new List<DnsAdapter>();
+    bool dnsActive;                      // alle aktiven Verbindungen stehen auf Google DNS
     readonly NeonButton tabTeamSpeak, tabTools;
     readonly AppSettings settings = new AppSettings(AppSettings.DefaultPath);
     ModReport modReport;                 // null = FiveM nicht gefunden oder nicht lesbar
@@ -97,6 +100,8 @@ public class ExtrasPage : Panel
             "TeamSpeak 3", "Lädt die aktuelle Version von teamspeak.com, prüft sie und installiert still.");
         saltyRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
             "SaltyChat", "Installiert das aktuelle Plugin von saltyhub.net in TeamSpeak 3.");
+        dnsRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
+            "SaltyChat DNS Fix", "Stellt die aktive Netzwerkverbindung auf Google DNS (IPv4 und IPv6).");
         soundRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
             "TeamSpeak-Sounds", "Schaltet alle TeamSpeak-Töne dauerhaft ab. Sprache bleibt.");
         hostsRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
@@ -117,6 +122,7 @@ public class ExtrasPage : Panel
 
         ts3Row.Action.Click += async delegate { await Guard(InstallTs3Async); };
         saltyRow.Action.Click += async delegate { await Guard(InstallSaltyAsync); };
+        dnsRow.Action.Click += async delegate { await Guard(ToggleDnsAsync); };
         soundRow.Action.Click += async delegate { await Guard(ToggleSoundsAsync); };
         hostsRow.Action.Click += async delegate { await Guard(ToggleHostsAsync); };
         rockstarRow.Action.Click += async delegate { await Guard(RunRockstarFixAsync); };
@@ -129,7 +135,7 @@ public class ExtrasPage : Panel
 
     void ShowGroup(bool teamSpeak)
     {
-        foreach (FeatureRow r in new[] { ts3Row, saltyRow, soundRow, hostsRow }) r.Visible = teamSpeak;
+        foreach (FeatureRow r in new[] { ts3Row, saltyRow, dnsRow, soundRow, hostsRow }) r.Visible = teamSpeak;
         foreach (FeatureRow r in new[] { rockstarRow, networkRow, steamRow, modRow }) r.Visible = !teamSpeak;
         tabTeamSpeak.Primary = teamSpeak;
         tabTools.Primary = !teamSpeak;
@@ -153,6 +159,7 @@ public class ExtrasPage : Panel
         tabTeamSpeak.Enabled = enabled;
         tabTools.Enabled = enabled;
         networkRow.Action.Enabled = enabled && !refreshing;
+        dnsRow.Action.Enabled = enabled && !refreshing && dnsAdapters.Count > 0;
         ts3Row.Action.Enabled = enabled && !refreshing;
         saltyRow.Action.Enabled = enabled && !refreshing;
         soundRow.Action.Enabled = enabled && !refreshing && soundsAvailable;
@@ -169,7 +176,7 @@ public class ExtrasPage : Panel
         if (refreshing) return;
         refreshing = true;
         SetButtonsEnabled(!host.Busy);
-        foreach (FeatureRow r in new[] { ts3Row, saltyRow, soundRow, hostsRow, rockstarRow, networkRow, steamRow, modRow })
+        foreach (FeatureRow r in new[] { ts3Row, saltyRow, dnsRow, soundRow, hostsRow, rockstarRow, networkRow, steamRow, modRow })
         {
             r.Value = "wird geprüft …";
             r.ValueColor = Theme.Muted;
@@ -195,6 +202,9 @@ public class ExtrasPage : Panel
         // Rockstar Launcher (lokal, schnell)
         ShowRockstarState();
         networkRow.Value = "danach PC neu starten";
+
+        // SaltyChat DNS (lokal, schnell)
+        ShowDnsState();
 
         // TeamSpeak 3
         string ts3Installed = Ts3.InstalledVersion();
@@ -360,6 +370,70 @@ public class ExtrasPage : Panel
                 return p.ExitCode;
             }
         });
+    }
+
+    void ShowDnsState()
+    {
+        dnsActive = false;
+        dnsRow.Action.Text = "EINRICHTEN";
+        dnsRow.Action.Primary = true;
+        dnsRow.ValueColor = Theme.Muted;
+        try { dnsAdapters = SaltyDns.ActiveAdapters(); }
+        catch (Exception ex)
+        {
+            dnsAdapters = new List<DnsAdapter>();
+            dnsRow.Value = "nicht lesbar: " + ex.Message;
+            return;
+        }
+        if (dnsAdapters.Count == 0)
+        {
+            dnsRow.Value = "keine aktive Netzwerkverbindung gefunden";
+            return;
+        }
+        dnsActive = dnsAdapters.TrueForAll(SaltyDns.IsGoogle);
+        if (dnsActive)
+        {
+            dnsRow.Value = "aktiv  ✔  Google DNS";
+            dnsRow.ValueColor = Theme.Good;
+            dnsRow.Action.Text = "ENTFERNEN";
+            dnsRow.Action.Primary = false;
+        }
+        else
+        {
+            dnsRow.Value = dnsAdapters.Exists(a => a.V4.Length > 0 || a.V6.Length > 0) ? "eigener DNS eingetragen" : "nicht aktiv  ·  DNS automatisch";
+            dnsRow.ValueColor = Theme.Pink;
+        }
+    }
+
+    async Task ToggleDnsAsync()
+    {
+        bool remove = dnsActive;
+        string text = remove ? SaltyDns.ConfirmOffText : SaltyDns.ConfirmOnText(dnsAdapters.ConvertAll(a => a.Name));
+        if (!Confirm(text, "SaltyChat DNS Fix")) return;
+
+        host.SetBusy(true);
+        string backup = SaltyDns.BackupFile;
+        if (!remove)
+        {
+            host.SetStatus("Bisherige DNS-Einstellungen werden gespeichert …", Theme.Text);
+            List<DnsAdapter> current = dnsAdapters;
+            await Task.Run(() => SaltyDns.SaveBackup(backup, current));
+        }
+
+        host.SetStatus("Bitte die Windows-Admin-Abfrage bestätigen …", Theme.Text);
+        int code = await RunElevatedAsync(SaltyDns.ElevatedArgument + " " + (remove ? SaltyDns.ModeOff : SaltyDns.ModeOn) + " " + RockstarLauncher.Quote(backup));
+
+        // Nicht dem Rückgabewert glauben: nachsehen, was wirklich eingetragen ist.
+        List<DnsAdapter> after = await Task.Run(() => SaltyDns.ActiveAdapters());
+        bool ok = code == 0 && (remove ? SaltyDns.IsRestored(after, backup) : after.Count > 0 && after.TrueForAll(SaltyDns.IsGoogle));
+        if (!ok)
+        {
+            host.SetStatus("Die DNS-Einstellungen wurden nicht vollständig übernommen.", Theme.Pink);
+            NeonDialog.Show(FindForm(), SaltyDns.FailedText(code), "SaltyChat DNS Fix", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        host.SetStatus(remove ? "Fertig!  Die bisherigen DNS-Einstellungen sind zurück." : "Fertig!  Google DNS ist eingetragen.", Theme.Orange);
+        NeonDialog.Show(FindForm(), remove ? SaltyDns.DoneOffText : SaltyDns.DoneOnText, "SaltyChat DNS Fix", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     void ShowSoundState()

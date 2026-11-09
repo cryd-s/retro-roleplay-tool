@@ -33,6 +33,7 @@ static class Tests
             RockstarTests();
             NetworkFixTests();
             SteamHintTests();
+            SaltyDnsTests();
             DownloadTests();
         }
         finally
@@ -865,6 +866,122 @@ static class Tests
     static void SameBytes(byte[] expected, byte[] actual, string what)
     {
         Equal(BitConverter.ToString(expected), BitConverter.ToString(actual), what);
+    }
+
+    static void SaltyDnsTests()
+    {
+        const string Id = "{11111111-2222-3333-4444-555555555555}", Other = "{AAAAAAAA-2222-3333-4444-555555555555}";
+        Func<List<KeyValuePair<string, string>>, string> args = list => string.Join("\n", list.ConvertAll(c => c.Value));
+
+        Run("DNS: genau die vier Google-Server in der richtigen Reihenfolge", () =>
+        {
+            var commands = SaltyDns.CommandsOn(new[] { new DnsAdapter { Id = Id, Index = 17, HasIPv6 = true } });
+            Equal(string.Join("\n", new[]
+            {
+                "interface ipv4 set dnsservers name=17 source=static address=8.8.8.8 register=primary validate=no",
+                "interface ipv4 add dnsservers name=17 address=8.8.4.4 index=2 validate=no",
+                "interface ipv6 set dnsservers name=17 source=static address=2001:4860:4860::8888 register=primary validate=no",
+                "interface ipv6 add dnsservers name=17 address=2001:4860:4860::8844 index=2 validate=no",
+                "/flushdns",
+            }), args(commands), "Befehle");
+            Equal(Path.Combine(Environment.SystemDirectory, "netsh.exe"), commands[0].Key, "voller Pfad");
+        });
+
+        Run("DNS: ohne IPv6 am Adapter gibt es keine IPv6-Befehle", () =>
+        {
+            string all = args(SaltyDns.CommandsOn(new[] { new DnsAdapter { Id = Id, Index = 17, HasIPv6 = false } }));
+            True(all.Contains("ipv4") && !all.Contains("ipv6"), "nur IPv4");
+        });
+
+        Run("DNS: Zurück stellt feste Server oder automatisch wieder her", () =>
+        {
+            var adapters = new[] { new DnsAdapter { Id = Id, Index = 5, HasIPv6 = true }, new DnsAdapter { Id = Other, Index = 6, HasIPv6 = false } };
+            var backup = new List<DnsBackupEntry> { new DnsBackupEntry { Id = Id, V4 = new[] { "1.1.1.1", "1.0.0.1" } } };
+            string all = args(SaltyDns.CommandsOff(adapters, backup));
+            True(all.Contains("ipv4 set dnsservers name=5 source=static address=1.1.1.1 register=primary"), "fester Server");
+            True(all.Contains("ipv4 add dnsservers name=5 address=1.0.0.1 index=2"), "zweiter Server");
+            True(all.Contains("ipv6 set dnsservers name=5 source=dhcp"), "IPv6 war automatisch");
+            True(all.Contains("ipv4 set dnsservers name=6 source=dhcp"), "ohne Eintrag automatisch");
+            True(!all.Contains("8.8.8.8"), "kein Google mehr");
+        });
+
+        Run("DNS: Google wird erkannt, IPv6 zählt nur wenn vorhanden", () =>
+        {
+            True(SaltyDns.IsGoogle(new DnsAdapter { V4 = SaltyDns.GoogleV4, HasIPv6 = false }), "nur IPv4");
+            True(!SaltyDns.IsGoogle(new DnsAdapter { V4 = SaltyDns.GoogleV4, HasIPv6 = true }), "IPv6 fehlt");
+            True(SaltyDns.IsGoogle(new DnsAdapter { V4 = SaltyDns.GoogleV4, V6 = SaltyDns.GoogleV6, HasIPv6 = true }), "beide");
+            True(!SaltyDns.IsGoogle(new DnsAdapter { V4 = new[] { "8.8.8.8" }, HasIPv6 = false }), "nur ein Server");
+            True(!SaltyDns.IsGoogle(new DnsAdapter { V4 = new[] { "8.8.4.4", "1.1.1.1" }, HasIPv6 = false }), "anderer Server");
+            True(SaltyDns.IsGoogle(new DnsAdapter { V4 = SaltyDns.GoogleV4, V6 = new[] { "2001:4860:4860:0:0:0:0:8888", "2001:4860:4860:0::8844" }, HasIPv6 = true }), "andere Schreibweise");
+        });
+
+        Run("DNS: Zurücksetzen gilt nur als geklappt, wenn Google wirklich weg ist", () =>
+        {
+            var google = new DnsAdapter { Id = Id, V4 = SaltyDns.GoogleV4, HasIPv6 = false };
+            var auto = new DnsAdapter { Id = Id, HasIPv6 = false };
+            True(SaltyDns.IsRestored(new[] { auto }, new List<DnsBackupEntry>()), "automatisch");
+            True(!SaltyDns.IsRestored(new[] { google }, new List<DnsBackupEntry>()), "keine Sicherung, Google noch da");
+            True(!SaltyDns.IsRestored(new[] { google }, new List<DnsBackupEntry> { new DnsBackupEntry { Id = Id } }), "war automatisch, Google noch da");
+            True(!SaltyDns.IsRestored(new[] { google }, new List<DnsBackupEntry> { new DnsBackupEntry { Id = Id, V4 = new[] { "1.1.1.1" } } }), "war Cloudflare, Google noch da");
+            True(SaltyDns.IsRestored(new[] { google }, new List<DnsBackupEntry> { new DnsBackupEntry { Id = Id, V4 = SaltyDns.GoogleV4 } }), "war schon vorher Google");
+            True(!SaltyDns.IsRestored(new[] { google }, Path.Combine(NewDir("dnsmissing"), "dns.txt")), "fehlende Datei, Google noch da");
+        });
+
+        Run("DNS: Nur gültige Adressen kommen in Befehle", () =>
+        {
+            Equal("8.8.8.8|1.1.1.1", string.Join("|", SaltyDns.ParseServers("8.8.8.8, 1.1.1.1", System.Net.Sockets.AddressFamily.InterNetwork)), "Komma und Leerzeichen");
+            Equal(0, SaltyDns.ParseServers(null, System.Net.Sockets.AddressFamily.InterNetwork).Length, "leer");
+            Equal(0, SaltyDns.ParseServers("8.8.8.8 & calc", System.Net.Sockets.AddressFamily.InterNetworkV6).Length, "falsche Art");
+            Equal("8.8.8.8", string.Join("|", SaltyDns.ParseServers("8.8.8.8;& calc.exe", System.Net.Sockets.AddressFamily.InterNetwork)), "kein eingeschleuster Text");
+        });
+
+        Run("DNS: Sicherung merkt sich den Zustand und überschreibt ihn nicht mit Google", () =>
+        {
+            string first = SaltyDns.BuildBackup("", new[] { new DnsAdapter { Id = Id, V4 = new[] { "1.1.1.1" } }, new DnsAdapter { Id = Other } });
+            var entries = SaltyDns.ParseBackup(first);
+            Equal(2, entries.Count, "zwei Adapter");
+            Equal("1.1.1.1", entries[0].V4[0], "fester Server");
+            Equal(0, entries[1].V4.Length, "automatisch");
+
+            string second = SaltyDns.BuildBackup(first, new[] { new DnsAdapter { Id = Id, V4 = SaltyDns.GoogleV4, HasIPv6 = false } });
+            Equal("1.1.1.1", SaltyDns.ParseBackup(second)[0].V4[0], "Google überschreibt die Sicherung nicht");
+            Equal(2, SaltyDns.ParseBackup(second).Count, "anderer Adapter bleibt");
+
+            string unknown = SaltyDns.BuildBackup("", new[] { new DnsAdapter { Id = Id, V4 = SaltyDns.GoogleV4, HasIPv6 = false } });
+            Equal(0, SaltyDns.ParseBackup(unknown)[0].V4.Length, "war schon Google: zurück auf automatisch");
+        });
+
+        Run("DNS: Beschädigte Sicherung wird nicht ausgeführt", () =>
+        {
+            var entries = SaltyDns.ParseBackup("kaputt\r\nnoch|mehr\r\n" + Id + "|8.8.8.8 & calc|x\r\n");
+            Equal(1, entries.Count, "nur die gültige Zeile");
+            Equal("8.8.8.8", string.Join("|", entries[0].V4), "nur die Adresse");
+            Equal(0, entries[0].V6.Length, "Unsinn verworfen");
+        });
+
+        Run("DNS: Nur echte verbundene Netzwerkkarten", () =>
+        {
+            var up = System.Net.NetworkInformation.OperationalStatus.Up;
+            var eth = System.Net.NetworkInformation.NetworkInterfaceType.Ethernet;
+            True(SaltyDns.IsCandidate(eth, up, true, "Intel(R) Ethernet Controller I226-V"), "Ethernet");
+            True(SaltyDns.IsCandidate(System.Net.NetworkInformation.NetworkInterfaceType.Wireless80211, up, true, "MediaTek Wi-Fi 6E"), "WLAN");
+            True(!SaltyDns.IsCandidate(eth, System.Net.NetworkInformation.OperationalStatus.Down, true, "Intel"), "getrennt");
+            True(!SaltyDns.IsCandidate(eth, up, false, "Intel"), "ohne Internetweg");
+            True(!SaltyDns.IsCandidate(System.Net.NetworkInformation.NetworkInterfaceType.Loopback, up, true, "Software Loopback"), "Loopback");
+            foreach (string vpn in new[] { "Tailscale Tunnel", "NordLynx Tunnel", "TAP-NordVPN Windows Adapter V9", "Hyper-V Virtual Ethernet Adapter", "VMware Virtual Ethernet", "WireGuard Tunnel" })
+                True(!SaltyDns.IsCandidate(eth, up, true, vpn), "bleibt unberührt: " + vpn);
+        });
+
+        Run("DNS: Admin-Teil lehnt falsche Eingaben ab, ohne etwas zu ändern", () =>
+        {
+            const string ok = @"C:\U\R\RetroRoleplayTool\Sicherung DNS\dns.txt";
+            True(SaltyDns.IsValidBackupPath(ok), "gültig");
+            foreach (string bad in new[] { null, "", "dns.txt", @"C:\Windows\dns.txt", @"\\server\x\RetroRoleplayTool\Sicherung DNS\dns.txt" })
+                True(!SaltyDns.IsValidBackupPath(bad), "abgelehnt: " + bad);
+            Equal(64, SaltyDns.RunElevated(new[] { "on" }), "fehlendes Argument");
+            Equal(64, SaltyDns.RunElevated(new[] { "evil", ok }), "falscher Modus");
+            Equal(64, SaltyDns.RunElevated(new[] { "on", @"C:\Windows\dns.txt" }), "falscher Pfad");
+        });
     }
 
     static void SteamHintTests()
