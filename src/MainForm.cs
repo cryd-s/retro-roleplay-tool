@@ -667,6 +667,8 @@ public class MainForm : Form
     // null = FiveM nicht gefunden
     public string FiveMAppDir { get { return fiveM.Found ? fiveM.AppDir : null; } }
 
+    public AppSettings Settings { get { return settings; } }
+
     public void SetBusy(bool value)
     {
         busy = value;

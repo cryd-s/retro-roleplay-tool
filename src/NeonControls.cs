@@ -150,6 +150,154 @@ public class NeonButton : NeonControl
     }
 }
 
+// Regler in ganzen Schritten: mit der Maus ziehen oder mit den Pfeiltasten bedienen.
+public class NeonSlider : NeonControl
+{
+    readonly int minimum, maximum;
+    int value;
+    bool hover, dragging;
+
+    public event EventHandler ValueChanged;
+
+    public NeonSlider(int minimum, int maximum, int value)
+    {
+        this.minimum = minimum;
+        this.maximum = maximum;
+        this.value = Math.Max(minimum, Math.Min(maximum, value));
+        Cursor = Cursors.Hand;
+        TabStop = true;
+        SetStyle(ControlStyles.Selectable, true);
+    }
+
+    public int Value
+    {
+        get { return value; }
+        set
+        {
+            int v = Math.Max(minimum, Math.Min(maximum, value));
+            if (v == this.value) return;
+            this.value = v;
+            Invalidate();
+            if (ValueChanged != null) ValueChanged(this, EventArgs.Empty);
+        }
+    }
+
+    int TrackLeft { get { return Theme.S(10); } }
+    int TrackRight { get { return Width - Theme.S(10); } }
+
+    float XOf(int v)
+    {
+        return TrackLeft + (TrackRight - TrackLeft) * (v - minimum) / (float)(maximum - minimum);
+    }
+
+    int ValueAt(int x)
+    {
+        return minimum + (int)Math.Round((x - TrackLeft) * (maximum - minimum) / (double)(TrackRight - TrackLeft));
+    }
+
+    protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { hover = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
+    protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
+    protected override void OnEnabledChanged(EventArgs e) { Cursor = Enabled ? Cursors.Hand : Cursors.Default; Invalidate(); base.OnEnabledChanged(e); }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        if (e.Button != MouseButtons.Left) return;
+        Focus();
+        dragging = true;
+        Capture = true;
+        Value = ValueAt(e.X);
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        if (dragging) Value = ValueAt(e.X);
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        dragging = false;
+        Capture = false;
+    }
+
+    protected override bool IsInputKey(Keys key)
+    {
+        switch (key)
+        {
+            case Keys.Left: case Keys.Right: case Keys.Up: case Keys.Down: case Keys.Home: case Keys.End: return true;
+        }
+        return base.IsInputKey(key);
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        switch (e.KeyCode)
+        {
+            case Keys.Left: case Keys.Down: Value = value - 1; break;
+            case Keys.Right: case Keys.Up: Value = value + 1; break;
+            case Keys.Home: Value = minimum; break;
+            case Keys.End: Value = maximum; break;
+            default: return;
+        }
+        e.Handled = true;
+    }
+
+    // Für Screenreader: als Regler sichtbar, der Wert kommt aus Text.
+    protected override AccessibleObject CreateAccessibilityInstance() { return new SliderAccessible(this); }
+
+    class SliderAccessible : ControlAccessibleObject
+    {
+        readonly NeonSlider owner;
+        public SliderAccessible(NeonSlider owner) : base(owner) { this.owner = owner; }
+        public override AccessibleRole Role { get { return AccessibleRole.Slider; } }
+        public override string Value { get { return owner.Text; } }
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        Graphics g = e.Graphics;
+        Theme.Prepare(g);
+        float cy = Height / 2f, trackH = Theme.S(4), thumb = Theme.S(8), x = XOf(value);
+        Color accent = Enabled ? Theme.Orange : Theme.Muted;
+
+        var track = new RectangleF(TrackLeft, cy - trackH / 2, TrackRight - TrackLeft, trackH);
+        using (GraphicsPath p = Theme.Rounded(track, trackH / 2))
+        using (var fill = new SolidBrush(Theme.Track))
+            g.FillPath(fill, p);
+        var filled = new RectangleF(TrackLeft, cy - trackH / 2, Math.Max(trackH, x - TrackLeft), trackH);
+        using (GraphicsPath p = Theme.Rounded(filled, trackH / 2))
+        using (var fill = new SolidBrush(accent))
+            g.FillPath(fill, p);
+
+        float dot = Theme.S(1.5f);
+        using (var passed = new SolidBrush(Color.FromArgb(28, 10, 30)))
+        using (var ahead = new SolidBrush(Theme.Line))
+            for (int v = minimum; v <= maximum; v++)
+                g.FillEllipse(v <= value ? passed : ahead, XOf(v) - dot, cy - dot, 2 * dot, 2 * dot);
+
+        if (Enabled)
+        {
+            int rings = hover || dragging ? 4 : 2;
+            for (int i = rings; i >= 1; i--)
+            {
+                float r = thumb + i * Theme.S(1);
+                using (var fill = new SolidBrush(Color.FromArgb(30, Theme.Orange)))
+                    g.FillEllipse(fill, x - r, cy - r, 2 * r, 2 * r);
+            }
+        }
+        using (var fill = new SolidBrush(accent))
+            g.FillEllipse(fill, x - thumb, cy - thumb, 2 * thumb, 2 * thumb);
+        if (Focused)
+            using (var pen = new Pen(Theme.Pink, Theme.S(2)))
+                g.DrawEllipse(pen, x - thumb, cy - thumb, 2 * thumb, 2 * thumb);
+    }
+}
+
 // Eine Zeile in der Liste: Häkchen, Name, Pfad, Wert rechts.
 public class TargetRow : NeonControl
 {

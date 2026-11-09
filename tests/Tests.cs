@@ -709,6 +709,43 @@ static class Tests
             Equal(14, TextureBudget.Clamp(14), "passt");
         });
 
+        Run("Texture Budget: vorbelegt sind 95 %, gemerkte Wahl gilt nur im erlaubten Bereich", () =>
+        {
+            Equal(18, TextureBudget.DefaultValue, "Vorgabe");
+            Equal(18, TextureBudget.FromStored(null), "nichts gemerkt");
+            Equal(18, TextureBudget.FromStored("kaputt"), "unlesbar");
+            Equal(14, TextureBudget.FromStored("14"), "gemerkt");
+            Equal(10, TextureBudget.FromStored("3"), "zu niedrig");
+            Equal(18, TextureBudget.FromStored("19"), "zu hoch");
+            Equal("95 %  ·  7,3 GB", TextureBudget.Label(18), "Anzeige");
+        });
+
+        Run("Texture Budget: das Ziel folgt dem Regler", () =>
+        {
+            string cfg = "seta \"vid_budgetScale\" \"14\"\r\n";
+            SettingCheck same = RpSettings.Check(BadXml, cfg, 14)[0];
+            True(same.Ok, "gleicher Wert passt");
+            Equal("74 %", same.Target, "Ziel gewählt");
+            SettingCheck other = RpSettings.Check(BadXml, cfg, 18)[0];
+            True(!other.Ok, "anderer Wert passt nicht");
+            Equal("95 %", other.Target, "Ziel Vorgabe");
+            Equal("95 %", RpSettings.Check(BadXml, cfg)[0].Target, "ohne Wahl gilt die Vorgabe");
+        });
+
+        Run("Texture Budget: Übernehmen setzt genau die Wahl", () =>
+        {
+            foreach (string start in new[] { "seta \"vid_budgetScale\" \"18\"\r\n", "seta \"vid_budgetScale\" \"0\"\r\n", "" })
+            {
+                string xml = BadXml, cfg = start;
+                RpSettings.Apply(ref xml, ref cfg, 12);
+                Equal("12", FiveMCfg.Get(cfg, "vid_budgetScale"), "Wahl aus: " + start);
+                True(RpSettings.Check(xml, cfg, 12)[0].Ok, "passt danach");
+            }
+            string x = BadXml, c = "";
+            RpSettings.Apply(ref x, ref c, 99);
+            Equal("18", FiveMCfg.Get(c, "vid_budgetScale"), "nie über 95 %");
+        });
+
         Run("RP-Einstellungen: Prüfung zeigt, was nicht passt", () =>
         {
             List<SettingCheck> checks = RpSettings.Check(BadXml, "seta \"vid_budgetScale\" \"0\"\r\n");
@@ -732,9 +769,9 @@ static class Tests
         {
             string xml = GtaGraphics.Apply(BadXml, new Dictionary<string, string> { { "LodScale", "0.700000" } });
             string cfg = "seta \"vid_budgetScale\" \"14\"\r\n";
-            RpSettings.Apply(ref xml, ref cfg);
+            RpSettings.Apply(ref xml, ref cfg, 14);
             Equal("0.700000", GtaGraphics.Get(xml, "LodScale"), "Distanz unter 95 % bleibt");
-            Equal("seta \"vid_budgetScale\" \"14\"\r\n", cfg, "Budget im Bereich bleibt, kein VSync-Eintrag erfunden");
+            Equal("seta \"vid_budgetScale\" \"14\"\r\n", cfg, "Budget wie gewählt bleibt, kein VSync-Eintrag erfunden");
         });
 
         Run("Sicherung: jeder Stand wird gespeichert, Schritt für Schritt zurück", () =>

@@ -28,7 +28,7 @@ Alle Versionen (auch die exe einzeln) findest du unter [Releases](https://github
 
 **GTA-Einstellungen** (gelten für FiveM – geändert werden FiveMs eigene Dateien in `%APPDATA%\CitizenFX`)
 - Prüft die wichtigsten Einstellungen und setzt sie mit einem Klick:
-  Extended Texture Budget 50–95 %, FXAA an, MSAA aus, VSync aus, Bevölkerungsdichte 0,
+  Extended Texture Budget (per Regler 50–95 %, vorbelegt 95 %), FXAA an, MSAA aus, VSync aus, Bevölkerungsdichte 0,
   Bevölkerungsvielfalt 0, Darstellungsdistanz höchstens 95 %
 - Optionale Grafik-Profile **Leistung**, **Ausgewogen** und **Qualität** – Auflösung und Bildschirm bleiben unverändert
 - Vor jeder Änderung wird der aktuelle Stand gespeichert – „Einen Schritt zurück“ jederzeit möglich

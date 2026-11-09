@@ -13,7 +13,21 @@ public static class TextureBudget
     public const int SliderMax = 19;
     public const int MinValue = 10;                  // 50 % (aufgerundet)
     public const int MaxValue = 18;                  // 95 %
+    public const int DefaultValue = MaxValue;
+    public const string SettingKey = "TextureBudget";
     const double FiveMGB = 1000.0 * 1024 * 1024;
+
+    // Die im Tool gemerkte Wahl; fehlt sie oder ist sie unlesbar, gilt die Vorgabe.
+    public static int FromStored(string stored)
+    {
+        int v;
+        return int.TryParse(stored, out v) ? Clamp(v) : DefaultValue;
+    }
+
+    public static string Label(int value)
+    {
+        return Percent(value) + " %  ·  " + FormatGb(BudgetBytes(value));
+    }
 
     public static int Percent(int value)
     {
@@ -66,16 +80,17 @@ public static class RpSettings
         return int.TryParse(FiveMCfg.Get(cfg, TextureBudget.Convar), out v) ? v : 0;
     }
 
-    public static List<SettingCheck> Check(string xml, string cfg)
+    public static List<SettingCheck> Check(string xml, string cfg, int budgetTarget = TextureBudget.DefaultValue)
     {
         var list = new List<SettingCheck>();
         int budget = Budget(cfg);
+        budgetTarget = TextureBudget.Clamp(budgetTarget);
         list.Add(new SettingCheck
         {
             Name = "Extended Texture Budget",
             Current = TextureBudget.Percent(budget) + " %  (Stufe " + budget + ")",
-            Target = "50 – 95 %",
-            Ok = budget >= TextureBudget.MinValue && budget <= TextureBudget.MaxValue,
+            Target = TextureBudget.Percent(budgetTarget) + " %",
+            Ok = budget == budgetTarget,
         });
 
         string fxaa = GtaGraphics.Get(xml, "FXAA_Enabled");
@@ -115,11 +130,11 @@ public static class RpSettings
     }
 
     // Setzt nur, was nicht passt; alles andere in beiden Dateien bleibt unverändert.
-    public static void Apply(ref string xml, ref string cfg)
+    public static void Apply(ref string xml, ref string cfg, int budgetTarget = TextureBudget.DefaultValue)
     {
-        int budget = Budget(cfg);
-        if (FiveMCfg.Get(cfg, TextureBudget.Convar) == null || TextureBudget.Clamp(budget) != budget)
-            cfg = FiveMCfg.Set(cfg, TextureBudget.Convar, TextureBudget.Clamp(budget).ToString(Inv));
+        budgetTarget = TextureBudget.Clamp(budgetTarget);
+        if (Budget(cfg) != budgetTarget)
+            cfg = FiveMCfg.Set(cfg, TextureBudget.Convar, budgetTarget.ToString(Inv));
         // Das Pausenmenü merkt sich VSync zusätzlich im Profil
         string profileVsync = FiveMCfg.Get(cfg, "profile_vidVsync");
         if (profileVsync != null && profileVsync != "0") cfg = FiveMCfg.Set(cfg, "profile_vidVsync", "0");

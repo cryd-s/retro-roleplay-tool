@@ -14,7 +14,7 @@ public class CheckListView : NeonControl
     readonly Font valueFont = Theme.MakeFont("Segoe UI", 9.5f);
     readonly Font markFont = Theme.MakeFont("Segoe UI Semibold", 11f);
 
-    public static int RowHeight { get { return Theme.S(27); } }
+    public static int RowHeight { get { return Theme.S(24); } }
 
     public List<SettingCheck> Items
     {
@@ -52,13 +52,14 @@ public class CheckListView : NeonControl
 public class GtaSettingsPage : Panel
 {
     readonly MainForm host;
-    readonly Label fileInfo, summary;
+    readonly Label fileInfo, summary, budgetChoice;
     readonly CheckListView checkList;
+    readonly NeonSlider budgetSlider;
     readonly NeonButton applyButton;
     readonly List<ModeCard> cards = new List<ModeCard>();
     readonly FeatureRow backupRow;
 
-    string graphicsPath;
+    string graphicsPath, lastXml, lastCfg = "";
     int notOk;
     int snapshotCount;
     bool refreshing;
@@ -77,7 +78,44 @@ public class GtaSettingsPage : Panel
         y += Theme.S(22);
         checkList = new CheckListView { Bounds = new Rectangle(margin, y, inner, 7 * CheckListView.RowHeight) };
         Controls.Add(checkList);
-        y += checkList.Height + Theme.S(10);
+        y += checkList.Height + Theme.S(6);
+
+        // Spalten wie in der Liste darüber
+        int colSlider = (int)(inner * 0.42), colChoice = (int)(inner * 0.70), pickH = Theme.S(30);
+        Controls.Add(new Label
+        {
+            Text = "Texture Budget einstellen",
+            ForeColor = Theme.Text,
+            Font = Theme.MakeFont("Segoe UI Semibold", 10f),
+            TextAlign = ContentAlignment.MiddleLeft,
+            AutoSize = false,
+            Bounds = new Rectangle(margin, y, colSlider - Theme.S(8), pickH),
+        });
+        budgetSlider = new NeonSlider(TextureBudget.MinValue, TextureBudget.MaxValue,
+                                      TextureBudget.FromStored(host.Settings.Get(TextureBudget.SettingKey)))
+        {
+            AccessibleName = "Extended Texture Budget",
+            Bounds = new Rectangle(margin + colSlider - Theme.S(2), y, colChoice - colSlider - Theme.S(14), pickH),
+        };
+        Controls.Add(budgetSlider);
+        budgetChoice = new Label
+        {
+            ForeColor = Theme.Orange,
+            Font = Theme.MakeFont("Segoe UI", 10f, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft,
+            AutoSize = false,
+            Bounds = new Rectangle(margin + colChoice, y, inner - colChoice, pickH),
+        };
+        Controls.Add(budgetChoice);
+        ShowBudgetChoice();
+        budgetSlider.ValueChanged += delegate
+        {
+            ShowBudgetChoice();
+            ShowChecks();
+            try { host.Settings.Set(TextureBudget.SettingKey, budgetSlider.Value.ToString()); }
+            catch (Exception) { /* Merken ist optional */ }
+        };
+        y += pickH + Theme.S(4);
 
         int btnH = Theme.S(50), btnW = Theme.S(260);
         summary = new Label
@@ -97,7 +135,7 @@ public class GtaSettingsPage : Panel
         };
         applyButton.Click += async delegate { await Guard(ApplyRpSettingsAsync); };
         Controls.Add(applyButton);
-        y += btnH + Theme.S(14);
+        y += btnH + Theme.S(10);
 
         // --- Grafik-Profile (optional)
         Controls.Add(Heading("GRAFIK-PROFIL  (OPTIONAL)", margin, y, inner));
@@ -118,7 +156,7 @@ public class GtaSettingsPage : Panel
             cards.Add(card);
             Controls.Add(card);
         }
-        y += cardH + Theme.S(10);
+        y += cardH + Theme.S(8);
 
         // --- Gespeicherte Stände
         backupRow = new FeatureRow(Theme.S(230))
@@ -133,7 +171,7 @@ public class GtaSettingsPage : Panel
         Controls.Add(backupRow);
         y += backupRow.Height;
 
-        ContentHeight = y + Theme.S(12);
+        ContentHeight = y + Theme.S(9);
     }
 
     public int ContentHeight { get; private set; }
@@ -166,8 +204,28 @@ public class GtaSettingsPage : Panel
     {
         bool on = enabled && !refreshing && graphicsPath != null;
         foreach (ModeCard c in cards) c.Enabled = on;
+        budgetSlider.Enabled = on;
         applyButton.Enabled = on && notOk > 0;
         backupRow.Action.Enabled = enabled && !refreshing && snapshotCount > 0;
+    }
+
+    void ShowBudgetChoice()
+    {
+        budgetChoice.Text = TextureBudget.Label(budgetSlider.Value);
+        budgetSlider.Text = budgetChoice.Text;
+    }
+
+    // Wertet die zuletzt gelesenen Dateien gegen die aktuelle Wahl am Regler aus.
+    void ShowChecks()
+    {
+        if (lastXml == null) return;
+        List<SettingCheck> checks = RpSettings.Check(lastXml, lastCfg, budgetSlider.Value);
+        checkList.Items = checks;
+        notOk = 0;
+        foreach (SettingCheck c in checks) if (!c.Ok) notOk++;
+        summary.Text = notOk == 0 ? "✔  Alles passt." : notOk + " von " + checks.Count + " Einstellungen passen noch nicht.";
+        summary.ForeColor = notOk == 0 ? Theme.Good : Theme.Pink;
+        SetButtonsEnabled(!host.Busy);
     }
 
     // ------------------------------------------------------------ Status
@@ -187,6 +245,8 @@ public class GtaSettingsPage : Panel
                 if (graphicsPath != null) xml = GameConfigFiles.ReadText(graphicsPath, out enc);
                 if (File.Exists(GameConfigFiles.CfgPath)) cfg = GameConfigFiles.ReadText(GameConfigFiles.CfgPath, out enc);
             });
+            lastXml = xml;
+            lastCfg = cfg;
 
             if (xml == null)
             {
@@ -198,12 +258,7 @@ public class GtaSettingsPage : Panel
             else
             {
                 fileInfo.Text = graphicsPath + "   ·   " + GameConfigFiles.CfgPath;
-                List<SettingCheck> checks = RpSettings.Check(xml, cfg);
-                checkList.Items = checks;
-                notOk = 0;
-                foreach (SettingCheck c in checks) if (!c.Ok) notOk++;
-                summary.Text = notOk == 0 ? "✔  Alles passt." : notOk + " von " + checks.Count + " Einstellungen passen noch nicht.";
-                summary.ForeColor = notOk == 0 ? Theme.Good : Theme.Pink;
+                ShowChecks();
             }
 
             GtaGraphics.Preset active = xml == null ? null : GtaGraphics.Matching(xml);
@@ -288,6 +343,7 @@ public class GtaSettingsPage : Panel
 
         host.SetBusy(true);
         string xmlPath = graphicsPath, cfgPath = GameConfigFiles.CfgPath;
+        int budget = budgetSlider.Value;
         await Task.Run(() =>
         {
             SaveCurrentState();
@@ -295,7 +351,7 @@ public class GtaSettingsPage : Panel
             string xml = GameConfigFiles.ReadText(xmlPath, out xmlEnc);
             string cfg = File.Exists(cfgPath) ? GameConfigFiles.ReadText(cfgPath, out cfgEnc) : "";
             string oldCfg = cfg;
-            RpSettings.Apply(ref xml, ref cfg);
+            RpSettings.Apply(ref xml, ref cfg, budget);
             GameConfigFiles.WriteText(xmlPath, xml, xmlEnc);
             if (cfg != oldCfg)
             {
