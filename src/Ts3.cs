@@ -117,16 +117,87 @@ public static class Ts3
         using (Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true })) { }
     }
 
-    // Startet den Installer still – bei bestehender Installation in denselben Ordner.
-    // Windows zeigt dabei ggf. die Admin-Abfrage.
-    public static int RunSilentInstaller(string installerPath)
+    // ------------------------------------------------------------ Installation ohne Overwolf
+
+    // Der Installer (3.6.2) fragt beim Start einen Overwolf-Server ab. Antwortet der, startet er auch im
+    // stillen Modus „OverwolfInstallerDownloader.exe -silent“, einen Schalter dagegen gibt es nicht.
+    // Deshalb läuft er im Admin-Teil des Tools in einem Job, der jedes Overwolf-Programm sofort beendet.
+    public const string ElevatedArgument = "--ts3-install";
+    public const int InvalidInstallerCode = 9064;
+
+    public static bool IsOverwolfImage(string imagePath)
     {
-        var psi = new ProcessStartInfo(installerPath, InstallerArguments(InstalledLocation())) { UseShellExecute = true };
-        using (Process p = Process.Start(psi))
+        if (string.IsNullOrEmpty(imagePath)) return false;
+        return System.IO.Path.GetFileName(imagePath).StartsWith("Overwolf", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsTeamSpeakSubject(string subject)
+    {
+        return System.Text.RegularExpressions.Regex.IsMatch(subject ?? "", @"(^|,\s*)O=""?TeamSpeak Systems GmbH""?\s*(,|$)");
+    }
+
+    public static bool IsTeamSpeakSigned(string file)
+    {
+        if (!System.IO.File.Exists(file) || !RockstarLauncher.HasValidSignature(file)) return false;
+        try { return IsTeamSpeakSubject(System.Security.Cryptography.X509Certificates.X509Certificate.CreateFromSignedFile(file).Subject); }
+        catch (Exception) { return false; }
+    }
+
+    // Admin-Teil: args = { Installer }. Liefert den Fehlercode des Installers.
+    public static int RunElevated(string[] args)
+    {
+        if (args.Length != 1 || !IsTeamSpeakSigned(args[0])) return InvalidInstallerCode;
+        int blocked;
+        return GuardedProcess.Run(args[0], InstallerArguments(InstalledLocation()), IsOverwolfImage, out blocked);
+    }
+
+    // Ist Overwolf schon da (z. B. von einer früheren TeamSpeak-Installation)?
+    public static bool IsOverwolfInstalled()
+    {
+        foreach (RegistryHive hive in new[] { RegistryHive.CurrentUser, RegistryHive.LocalMachine })
+            foreach (RegistryView view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+            {
+                try
+                {
+                    using (RegistryKey root = RegistryKey.OpenBaseKey(hive, view))
+                    using (RegistryKey uninstall = root.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall"))
+                    {
+                        if (uninstall == null) continue;
+                        foreach (string name in uninstall.GetSubKeyNames())
+                            using (RegistryKey app = uninstall.OpenSubKey(name))
+                            {
+                                string display = app == null ? null : app.GetValue("DisplayName") as string;
+                                if (display != null && display.StartsWith("Overwolf", StringComparison.OrdinalIgnoreCase)) return true;
+                            }
+                    }
+                }
+                catch (Exception) { }
+            }
+        return false;
+    }
+
+    // „1“ = TeamSpeak speichert seine Einstellungen im Installationsordner (Auswahl im Setup)
+    public static string ConfigLocation()
+    {
+        foreach (var place in new[]
         {
-            p.WaitForExit();
-            return p.ExitCode;
+            new KeyValuePair<RegistryHive, RegistryView>(RegistryHive.CurrentUser, RegistryView.Default),
+            new KeyValuePair<RegistryHive, RegistryView>(RegistryHive.LocalMachine, RegistryView.Registry64),
+            new KeyValuePair<RegistryHive, RegistryView>(RegistryHive.LocalMachine, RegistryView.Registry32),
+        })
+        {
+            try
+            {
+                using (RegistryKey root = RegistryKey.OpenBaseKey(place.Key, place.Value))
+                using (RegistryKey key = root.OpenSubKey(@"Software\TeamSpeak 3 Client"))
+                {
+                    string v = key == null ? null : key.GetValue("ConfigLocation") as string;
+                    if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
+                }
+            }
+            catch (Exception) { }
         }
+        return null;
     }
 }
 

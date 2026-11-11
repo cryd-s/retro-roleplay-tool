@@ -35,7 +35,7 @@ Alle Versionen (auch die exe einzeln) findest du unter [Releases](https://github
 - Nur bei geschlossenem FiveM, sonst überschreibt FiveM die Werte beim Beenden
 
 **Sonderfunktionen**
-- TeamSpeak 3 in der aktuellen Version installieren/aktualisieren (offizieller Download mit Prüfsummen-Check)
+- TeamSpeak 3 in der aktuellen Version installieren/aktualisieren (offizieller Download mit Prüfsummen- und Signatur-Check, ohne das mitgelieferte Overwolf)
 - SaltyChat in der aktuellen Version installieren
 - SaltyChat DNS Fix: stellt die aktive Netzwerkverbindung auf Google DNS (IPv4 `8.8.8.8` / `8.8.4.4`, IPv6 `2001:4860:4860::8888` / `2001:4860:4860::8844`); die bisherigen Einstellungen werden gespeichert und lassen sich wiederherstellen
 - TeamSpeak-Sounds dauerhaft deaktivieren oder wieder aktivieren (Sound-Paket „Sounds deactivated“, Sprache bleibt)

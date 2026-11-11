@@ -534,6 +534,55 @@ static class Tests
             True(Ts3.IsTs3ProcessName("TS3Client_win32"), "win32");
             True(!Ts3.IsTs3ProcessName("TeamSpeak"), "TeamSpeak 5/6 nicht");
         });
+
+        Run("TS3: Overwolf-Programme werden erkannt, TeamSpeak-Teile nicht", () =>
+        {
+            True(Ts3.IsOverwolfImage(@"C:\Users\x\AppData\Local\Temp\nsA1B2.tmp\OverwolfInstallerDownloader.exe"), "Downloader");
+            True(Ts3.IsOverwolfImage(@"C:\Temp\nsx.tmp\OverwolfTeamSpeakInstaller.exe"), "Installer");
+            True(Ts3.IsOverwolfImage(@"C:\Program Files (x86)\Overwolf\OverwolfLauncher.exe"), "Launcher");
+            True(!Ts3.IsOverwolfImage(@"C:\Temp\nsx.tmp\vc_redist.x64.exe"), "VC++ bleibt");
+            True(!Ts3.IsOverwolfImage(@"C:\Program Files\TeamSpeak 3 Client\ts3client_win64.exe"), "TeamSpeak bleibt");
+            True(!Ts3.IsOverwolfImage(null), "unbekannt bleibt");
+        });
+
+        Run("TS3: Admin-Teil startet nur von TeamSpeak signierte Installer", () =>
+        {
+            Equal(Ts3.InvalidInstallerCode, Ts3.RunElevated(new string[0]), "ohne Datei");
+            Equal(Ts3.InvalidInstallerCode, Ts3.RunElevated(new[] { @"C:\gibt\es\nicht.exe" }), "fehlende Datei");
+            Equal(Ts3.InvalidInstallerCode, Ts3.RunElevated(new[] { Path.Combine(Environment.SystemDirectory, "cmd.exe") }),
+                  "Windows-Programm ist nicht TeamSpeak");
+            True(Ts3.IsTeamSpeakSubject("CN=TeamSpeak Systems GmbH, O=TeamSpeak Systems GmbH, L=Krün, S=Bayern, C=DE"), "echt");
+            True(!Ts3.IsTeamSpeakSubject("CN=x, O=TeamSpeak Systems GmbH Fake, C=DE"), "ähnlicher Name");
+            True(!Ts3.IsTeamSpeakSubject("CN=x, OU=TeamSpeak Systems GmbH, O=Andere, C=DE"), "nur Abteilung");
+        });
+
+        Run("Job-Wächter: verbotenes Unterprogramm wird sofort beendet, Rest läuft durch", () =>
+        {
+            string dir = NewDir("guard");
+            string fake = Path.Combine(dir, "OverwolfInstallerDownloader.exe");
+            File.Copy(Path.Combine(Environment.SystemDirectory, "PING.EXE"), fake);
+            string ping = Path.Combine(Environment.SystemDirectory, "PING.EXE");
+            string cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+            // „Installer“: startet Overwolf ohne zu warten (wie NSIS Exec), dann ein erlaubtes Programm, dann Ende mit Code 7.
+            // Der Wächter ist so schnell, dass schon der Start scheitert; cmd meldet das als „Zugriff verweigert“ (2>nul).
+            string script = "/c start \"\" /b \"" + fake + "\" -n 30 127.0.0.1 >nul 2>nul & \"" + ping + "\" -n 2 127.0.0.1 >nul & exit 7";
+            int blocked;
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            int code = GuardedProcess.Run(cmd, script, Ts3.IsOverwolfImage, out blocked);
+            Equal(7, code, "Fehlercode des Installers");
+            Equal(1, blocked, "ein Programm verhindert");
+            True(watch.Elapsed.TotalSeconds < 15, "wartet nicht auf das beendete Programm: " + watch.Elapsed.TotalSeconds);
+            foreach (var p in System.Diagnostics.Process.GetProcessesByName("OverwolfInstallerDownloader"))
+                using (p) True(!string.Equals(p.MainModule.FileName, fake, StringComparison.OrdinalIgnoreCase), "läuft nicht mehr");
+        });
+
+        Run("Job-Wächter: ohne verbotene Programme bleibt alles gleich", () =>
+        {
+            int blocked;
+            string cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+            Equal(0, GuardedProcess.Run(cmd, "/c exit 0", Ts3.IsOverwolfImage, out blocked), "Code");
+            Equal(0, blocked, "nichts verhindert");
+        });
     }
 
     // ---------------------------------------------------------------- SaltyChat
@@ -1488,6 +1537,51 @@ static class Tests
                 holder.Execute("ROLLBACK");
             }
             Equal("default", Ts3Sounds.ReadPack(file), "unverändert");
+        });
+
+        Run("TS-Sounds: frische Installation ohne Benachrichtigungs-Tabelle wird abgeschaltet", () =>
+        {
+            // So sieht settings.db aus, solange in TeamSpeak nie die Benachrichtigungen geöffnet wurden.
+            string dir = NewDir("ts3fresh");
+            string file = Path.Combine(dir, "settings.db");
+            using (SqliteDb db = SqliteDb.Create(file))
+            {
+                db.Execute("CREATE TABLE General (timestamp INTEGER UNSIGNED NOT NULL, key VARCHAR NOT NULL UNIQUE, value VARCHAR)");
+                db.Execute("CREATE INDEX index_General_key ON General (key)");
+                db.Execute("INSERT INTO General VALUES (1, 'Identity', 'geheim')");
+            }
+            var settings = new AppSettings(Path.Combine(dir, "s.ini"));
+            True(Ts3Sounds.IsAvailable(file), "TeamSpeak lief schon, also verfügbar");
+            True(!Ts3Sounds.AreDisabled(file), "Töne an");
+            Equal<string>(null, Ts3Sounds.ReadPack(file), "noch kein Paket");
+
+            Ts3Sounds.Disable(file, settings);
+            True(Ts3Sounds.AreDisabled(file), "abgeschaltet");
+            using (SqliteDb db = SqliteDb.OpenRead(file))
+            {
+                Equal("CREATE TABLE Notifications (timestamp INTEGER UNSIGNED NOT NULL, key VARCHAR NOT NULL UNIQUE, value VARCHAR)",
+                      db.Scalar("SELECT sql FROM sqlite_master WHERE name = 'Notifications'"), "Tabelle wie bei TeamSpeak");
+                Equal("CREATE INDEX index_Notifications_key ON Notifications (key)",
+                      db.Scalar("SELECT sql FROM sqlite_master WHERE name = 'index_Notifications_key'"), "Index wie bei TeamSpeak");
+                Equal("geheim", db.Scalar("SELECT value FROM General WHERE key = 'Identity'"), "Rest bleibt");
+                Equal("ok", db.Scalar("PRAGMA integrity_check"), "Datenbank intakt");
+            }
+            Ts3Sounds.Enable(file, settings);
+            Equal("default", Ts3Sounds.ReadPack(file), "wieder an mit Standardpaket");
+        });
+
+        Run("TS-Sounds: Einstellungen im Installationsordner werden gefunden", () =>
+        {
+            string appData = @"C:\Users\x\AppData\Roaming", install = @"C:\Spiele\TeamSpeak 3 Client";
+            string inAppData = @"C:\Users\x\AppData\Roaming\TS3Client\settings.db";
+            string inInstall = @"C:\Spiele\TeamSpeak 3 Client\config\settings.db";
+            List<string> own = Ts3Sounds.Candidates(appData, "1", install + "\\");
+            Equal(inInstall, own[0], "Speicherort Installationsordner zuerst");
+            Equal(inAppData, own[1], "danach AppData");
+            List<string> normal = Ts3Sounds.Candidates(appData, "0", install);
+            Equal(inAppData, normal[0], "normal zuerst AppData");
+            Equal(inInstall, normal[1], "danach Installationsordner");
+            Equal(1, Ts3Sounds.Candidates(appData, null, null).Count, "ohne Installation nur AppData");
         });
 
         Run("TS-Sounds: Pfade mit Umlauten funktionieren", () =>

@@ -44,6 +44,15 @@ static class Program
             catch (Exception) { return 1; }
         }
 
+        // Admin-Hilfsmodus: TeamSpeak-Installer ohne Overwolf (wird mit Adminrechten gestartet)
+        if (args.Length > 0 && args[0] == Ts3.ElevatedArgument)
+        {
+            var rest = new string[args.Length - 1];
+            Array.Copy(args, 1, rest, 0, rest.Length);
+            try { return Ts3.RunElevated(rest); }
+            catch (Exception) { return 1; }
+        }
+
         // Admin-Hilfsmodus für den Netzwerk Fix (wird mit Adminrechten gestartet)
         if (args.Length == 1 && args[0] == NetworkFix.ElevatedArgument)
         {

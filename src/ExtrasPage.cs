@@ -69,6 +69,7 @@ public class ExtrasPage : Panel
     readonly AppSettings settings = new AppSettings(AppSettings.DefaultPath);
     ModReport modReport;                 // null = FiveM nicht gefunden oder nicht lesbar
     bool soundsAvailable, soundsDisabled;
+    string soundDb;
 
     Ts3Release ts3Latest;
     string saltyLatest;
@@ -444,13 +445,16 @@ public class ExtrasPage : Panel
         soundRow.ValueColor = Theme.Muted;
         try
         {
-            soundsAvailable = Ts3Sounds.IsAvailable(Ts3Sounds.SettingsDb);
+            soundDb = Ts3Sounds.FindSettingsDb();
+            soundsAvailable = Ts3Sounds.IsAvailable(soundDb);
             if (!soundsAvailable)
             {
-                soundRow.Value = "keine Einstellungen gefunden – TeamSpeak 3 einmal starten";
+                soundRow.Value = Ts3.InstalledVersion() == null
+                    ? "TeamSpeak 3 ist nicht installiert"
+                    : "TeamSpeak 3 noch nie gestartet – einmal starten, dann schließen";
                 return;
             }
-            soundsDisabled = Ts3Sounds.AreDisabled(Ts3Sounds.SettingsDb);
+            soundsDisabled = Ts3Sounds.AreDisabled(soundDb);
         }
         catch (Exception ex)
         {
@@ -489,7 +493,7 @@ public class ExtrasPage : Panel
         host.SetStatus("TeamSpeak-Einstellung wird geändert …", Theme.Text);
         try
         {
-            string db = Ts3Sounds.SettingsDb;
+            string db = soundDb;
             await Task.Run(() =>
             {
                 if (disable) Ts3Sounds.Disable(db, settings);
@@ -695,10 +699,15 @@ public class ExtrasPage : Panel
             if (!string.Equals(hash, rel.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Die Prüfsumme des TeamSpeak-Downloads stimmt nicht. Die Datei wurde verworfen.");
 
-            host.SetStatus("Installiere TeamSpeak 3 " + rel.Version + " … (Admin-Abfrage bestätigen)", Theme.Text);
-            int code = await Task.Run(() => Ts3.RunSilentInstaller(file));
+            host.SetStatus("Installiere TeamSpeak 3 " + rel.Version + " ohne Overwolf … (Admin-Abfrage bestätigen)", Theme.Text);
+            int code = await RunElevatedAsync(Ts3.ElevatedArgument + " " + RockstarLauncher.Quote(file));
+            if (code == Ts3.InvalidInstallerCode)
+                throw new InvalidDataException("Der Download ist nicht von TeamSpeak signiert und wurde nicht ausgeführt.");
             if (code != 0) throw new Exception("Der TeamSpeak-Installer meldet Fehlercode " + code + ".");
-            host.SetStatus("Fertig!  TeamSpeak 3 " + rel.Version + " ist installiert.", Theme.Orange);
+            host.SetStatus("Fertig!  TeamSpeak 3 " + rel.Version + " ist installiert, ohne Overwolf." +
+                           (Ts3.IsOverwolfInstalled()
+                               ? "\nOverwolf ist von früher noch da und lässt sich unter Windows → Apps entfernen."
+                               : ""), Theme.Orange);
         }
         finally
         {

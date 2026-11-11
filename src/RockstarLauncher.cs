@@ -458,7 +458,7 @@ public static class RockstarLauncher
         return Regex.IsMatch(subject ?? "", @"(^|,\s*)O=""?Rockstar Games, Inc\.?""?\s*(,|$)");
     }
 
-    static bool HasValidSignature(string file)
+    public static bool HasValidSignature(string file)
     {
         var fileInfo = new WinTrustFileInfo { FilePath = file };
         fileInfo.Size = Marshal.SizeOf(typeof(WinTrustFileInfo));

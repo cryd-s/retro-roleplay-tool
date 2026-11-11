@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -123,16 +124,39 @@ public static class Ts3Sounds
     const string PreviousKey = "Ts3SoundPackBefore";
     const string TableName = "Notifications";
 
-    public static string SettingsDb
+    // So legt TeamSpeak selbst jede seiner Tabellen an.
+    const string CreateTableSql = "CREATE TABLE Notifications (timestamp INTEGER UNSIGNED NOT NULL, key VARCHAR NOT NULL UNIQUE, value VARCHAR)";
+    const string CreateIndexSql = "CREATE INDEX index_Notifications_key ON Notifications (key)";
+
+    // Mögliche Orte der settings.db, wahrscheinlichster zuerst. Im Setup lässt sich wählen, ob TeamSpeak
+    // seine Einstellungen in AppData (Standard) oder im Installationsordner unter „config“ ablegt.
+    public static List<string> Candidates(string appData, string configLocation, string installDir)
     {
-        get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TS3Client", "settings.db"); }
+        var list = new List<string>();
+        string own = Path.Combine(appData, "TS3Client", "settings.db");
+        string dir = installDir == null ? "" : installDir.Trim().Trim('"').TrimEnd('\\');
+        string inInstall = dir.Length == 0 ? null : Path.Combine(dir, "config", "settings.db");
+        if (inInstall != null && configLocation == "1") list.Add(inInstall);
+        list.Add(own);
+        if (inInstall != null && configLocation != "1") list.Add(inInstall);
+        return list;
     }
 
-    // TeamSpeak legt die Datei erst beim ersten Start an.
+    // Die Datei, die TeamSpeak benutzt; gibt es noch keine, der Ort, an dem sie entstehen wird.
+    public static string FindSettingsDb()
+    {
+        List<string> all = Candidates(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                                      Ts3.ConfigLocation(), Ts3.InstalledLocation());
+        foreach (string f in all) if (File.Exists(f)) return f;
+        return all[0];
+    }
+
+    // TeamSpeak legt die Datei erst beim ersten Start an. Die Tabelle für Benachrichtigungen kommt erst dazu,
+    // wenn man dort etwas einstellt; sie fehlt also oft und wird beim Abschalten wie von TeamSpeak angelegt.
     public static bool IsAvailable(string dbPath)
     {
         if (!File.Exists(dbPath)) return false;
-        using (SqliteDb db = SqliteDb.OpenRead(dbPath)) return HasTable(db);
+        using (SqliteDb db = SqliteDb.OpenRead(dbPath)) return HasTable(db) || IsTs3Database(db);
     }
 
     public static bool AreDisabled(string dbPath)
@@ -144,7 +168,7 @@ public static class Ts3Sounds
     public static string ReadPack(string dbPath)
     {
         using (SqliteDb db = SqliteDb.OpenRead(dbPath))
-            return db.Scalar("SELECT value FROM " + TableName + " WHERE key = 'SoundPack'");
+            return HasTable(db) ? db.Scalar("SELECT value FROM " + TableName + " WHERE key = 'SoundPack'") : null;
     }
 
     public static void Disable(string dbPath, AppSettings settings)
@@ -165,15 +189,41 @@ public static class Ts3Sounds
     {
         using (SqliteDb db = SqliteDb.OpenWrite(dbPath))
         {
-            if (!HasTable(db))
-                throw new InvalidOperationException("Bitte TeamSpeak 3 einmal starten und wieder schließen.");
             long now = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
-            db.Execute("INSERT OR REPLACE INTO " + TableName + " (timestamp, key, value) VALUES (?, 'SoundPack', ?)", now, pack);
+            db.Execute("BEGIN IMMEDIATE");
+            try
+            {
+                if (!HasTable(db))
+                {
+                    if (!IsTs3Database(db))
+                        throw new InvalidOperationException("Bitte TeamSpeak 3 einmal starten und wieder schließen.");
+                    db.Execute(CreateTableSql);
+                    db.Execute(CreateIndexSql);
+                }
+                db.Execute("INSERT OR REPLACE INTO " + TableName + " (timestamp, key, value) VALUES (?, 'SoundPack', ?)", now, pack);
+                db.Execute("COMMIT");
+            }
+            catch
+            {
+                try { db.Execute("ROLLBACK"); } catch (Exception) { /* schon zurückgerollt */ }
+                throw;
+            }
         }
     }
 
     static bool HasTable(SqliteDb db)
     {
-        return db.Scalar("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", TableName) != null;
+        return HasTable(db, TableName);
+    }
+
+    static bool HasTable(SqliteDb db, string name)
+    {
+        return db.Scalar("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", name) != null;
+    }
+
+    // Eine Datenbank, die TeamSpeak 3 schon angelegt hat (diese Tabelle gibt es ab dem ersten Start)
+    static bool IsTs3Database(SqliteDb db)
+    {
+        return HasTable(db, "General");
     }
 }
