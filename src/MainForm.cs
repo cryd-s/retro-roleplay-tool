@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Reflection;
@@ -282,9 +283,73 @@ public class MainForm : Form
         catch (Exception) { return; }   // kein Internet o. Ä.: dann eben kein Hinweis
         if (update == null || IsDisposed) return;
 
-        updateText.Text = "Neue Version v" + update.Version + " verfügbar  ·  du nutzt v" + current;
-        updateButton.Click += delegate { Projects.Open(update.ZipUrl, this); };
+        string barText = "Neue Version v" + update.Version + " verfügbar  ·  du nutzt v" + current;
+        updateText.Text = barText;
+        bool self = update.CanSelfUpdate && SelfUpdate.CanWriteNextTo(Application.ExecutablePath);
+        updateButton.Text = self ? "JETZT AKTUALISIEREN" : "ZIP HERUNTERLADEN";
+        updateButton.Click += async delegate
+        {
+            if (self) await RunSelfUpdateAsync(update, current, barText);
+            else Projects.Open(update.ZipUrl, this);
+        };
         updateBar.Visible = true;
+    }
+
+    // Lädt die neue exe, prüft sie, tauscht sich selbst aus und startet neu. Bei Problemen bleibt alles beim Alten.
+    async Task RunSelfUpdateAsync(UpdateInfo update, string current, string barText)
+    {
+        if (busy)
+        {
+            SetStatus("Bitte erst den laufenden Vorgang abwarten, dann aktualisieren.", Theme.Pink);
+            return;
+        }
+        if (NeonDialog.Show(this,
+                "Version v" + update.Version + " ist da, du nutzt v" + current + ".\n\n" +
+                "Das Tool lädt die neue Version von GitHub, prüft sie und startet danach neu. " +
+                "Deine Einstellungen bleiben erhalten.\n\nJetzt aktualisieren?",
+                "Update", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            return;
+
+        string exe = Application.ExecutablePath;
+        string newFile = SelfUpdate.NewPath(exe);
+        string name = Assembly.GetExecutingAssembly().GetName().Name;
+        SetBusy(true);
+        updateButton.Enabled = false;
+        try
+        {
+            var progress = new Progress<int>(p =>
+                updateText.Text = "Lade v" + update.Version + " …" + (p >= 0 ? "  " + (p / 10) + " %" : ""));
+            IProgress<int> report = progress;
+            await Task.Run(() => Downloader.DownloadFile(update.ExeUrl, newFile, p => report.Report(p)));
+            updateText.Text = "Prüfe v" + update.Version + " …";
+            await Task.Run(() => SelfUpdate.Verify(newFile, update.ExeSha256, name, update.Version));
+            await Task.Run(() => SelfUpdate.Swap(exe, newFile));
+            try
+            {
+                using (Process.Start(new ProcessStartInfo(exe, SelfUpdate.UpdatedArgument + " " + current)
+                       { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe) })) { }
+            }
+            catch (Exception)
+            {
+                SelfUpdate.RollBack(exe);
+                throw new Exception("Die neue Version ließ sich nicht starten.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Downloader.TryDelete(newFile);
+            SetBusy(false);
+            updateButton.Enabled = true;
+            updateText.Text = barText;
+            if (NeonDialog.Show(this,
+                    "Das Update hat nicht geklappt: " + ex.Message + "\n\nDie bisherige Version bleibt. " +
+                    "Stattdessen die neue Version als ZIP im Browser herunterladen?",
+                    "Update", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+                Projects.Open(update.ZipUrl, this);
+            return;
+        }
+        SetBusy(false);
+        Close();
     }
 
     // ------------------------------------------------------------ FiveM-Installation
@@ -401,6 +466,11 @@ public class MainForm : Form
     {
         base.OnShown(e);
         ShowPage(0);
+        // Reste eines Updates wegräumen; die alte Version beendet sich dabei vielleicht gerade noch.
+        string exe = Application.ExecutablePath;
+        var cleanup = Task.Run(() => SelfUpdate.CleanUp(exe, 40));
+        string from = SelfUpdate.UpdatedFrom(Environment.GetCommandLineArgs());
+        if (from != null) SetStatus("Aktualisiert von v" + from + " auf " + AppVersion() + "  ✔", Theme.Good);
         var ignored = CheckForUpdateAsync();
     }
 

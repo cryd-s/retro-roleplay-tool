@@ -66,9 +66,12 @@ Alle Versionen (auch die exe einzeln) findest du unter [Releases](https://github
 - [Entbannungsdiscord](https://discord.gg/9s3n4u5ckE)
 - [EzTunes](https://eztunes.online/) – PC-Optimierung für FiveM und mehr
 
-**Update-Hinweis**
-- Fragt beim Start bei GitHub die neueste Version ab und zeigt bei einer neueren Version einen Hinweis mit direktem Download-Link zur ZIP
-- Installiert nichts selbst; ohne Internet erscheint einfach kein Hinweis
+**Update**
+- Fragt beim Start bei GitHub die neueste Version ab und bietet bei einer neueren Version **JETZT AKTUALISIEREN** an
+- Lädt die neue exe von GitHub, prüft sie gegen die SHA-256 von GitHub sowie Programmname und Version, tauscht sich selbst aus und startet neu; Einstellungen bleiben erhalten
+- Klappt das nicht (z. B. kein Schreibrecht im Ordner), bleibt die bisherige Version und es gibt wie früher den Download-Link zur ZIP
+- Ohne Internet erscheint einfach kein Hinweis
+- Funktioniert ab v1.16.0; ältere Versionen zeigen für v1.16.0 noch den ZIP-Link
 
 **Discord Bots**
 - [Retro RP](https://retrorp.de) – Bot für Familien-Discord

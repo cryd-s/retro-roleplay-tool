@@ -28,6 +28,7 @@ static class Tests
             GtaSettingsTests();
             Ds4Tests();
             UpdateTests();
+            SelfUpdateTests();
             ModCheckTests();
             Ts3SoundTests();
             RockstarTests();
@@ -1601,11 +1602,126 @@ static class Tests
         });
     }
 
+    const string ExeDigest = "41a3b449da4065d9fd922070b5a8e382c6a33351d1d3df55cae27163fc4e4290";
+
     static string ReleaseJson(string tag, string assetName, string url, string state)
     {
+        return ReleaseJson(tag, assetName, url, state, UpdateBase + tag + "/RetroRoleplayTool.exe", "sha256:" + ExeDigest);
+    }
+
+    static string ReleaseJson(string tag, string assetName, string url, string state, string exeUrl, string exeDigest)
+    {
         return "{\"tag_name\":\"" + tag + "\",\"assets\":[" +
-               "{\"name\":\"RetroRoleplayTool.exe\",\"state\":\"uploaded\",\"browser_download_url\":\"" + UpdateBase + tag + "/RetroRoleplayTool.exe\"}," +
+               "{\"name\":\"RetroRoleplayTool.exe\",\"state\":\"uploaded\",\"browser_download_url\":\"" + exeUrl + "\"" +
+               (exeDigest == null ? "" : ",\"digest\":\"" + exeDigest + "\"") + "}," +
                "{\"name\":\"" + assetName + "\",\"state\":\"" + state + "\",\"browser_download_url\":\"" + url + "\"}]}";
+    }
+
+    // Kopiert ein Programm als „app.exe“ in einen Testordner.
+    static string FakeApp(string dir, string content)
+    {
+        string exe = Path.Combine(dir, "app.exe");
+        File.WriteAllText(exe, content);
+        return exe;
+    }
+
+    static void SelfUpdateTests()
+    {
+        Run("Selbst-Update: neue exe und ihre Prüfsumme werden gelesen", () =>
+        {
+            UpdateInfo u = UpdateCheck.Evaluate("1.4.0", ReleaseJson("v1.5.0", "RetroRoleplayTool.zip", UpdateZip, "uploaded"));
+            Equal(UpdateBase + "v1.5.0/RetroRoleplayTool.exe", u.ExeUrl, "exe-Link");
+            Equal(ExeDigest, u.ExeSha256, "Prüfsumme");
+            True(u.CanSelfUpdate, "Selbst-Update möglich");
+        });
+
+        Run("Selbst-Update: ohne Prüfsumme oder mit fremdem Link nur der ZIP-Hinweis", () =>
+        {
+            string zip = "RetroRoleplayTool.zip", exe = UpdateBase + "v1.5.0/RetroRoleplayTool.exe";
+            foreach (string[] c in new[]
+            {
+                new[] { exe, null },
+                new[] { exe, "md5:abc" },
+                new[] { exe, "sha256:zu-kurz" },
+                new[] { "https://example.com/RetroRoleplayTool.exe", "sha256:" + ExeDigest },
+                new[] { UpdateBase + "v1.4.0/RetroRoleplayTool.exe", "sha256:" + ExeDigest },
+            })
+            {
+                UpdateInfo u = UpdateCheck.Evaluate("1.4.0", ReleaseJson("v1.5.0", zip, UpdateZip, "uploaded", c[0], c[1]));
+                True(u != null && !u.CanSelfUpdate, "kein Selbst-Update: " + c[0] + " " + c[1]);
+                Equal(UpdateZip, u.ZipUrl, "ZIP-Hinweis bleibt");
+            }
+        });
+
+        Run("Selbst-Update: nur das echte Tool in der erwarteten Version wird akzeptiert", () =>
+        {
+            string self = System.Reflection.Assembly.GetExecutingAssembly().Location;
+            var name = System.Reflection.AssemblyName.GetAssemblyName(self);
+            string sha = Downloader.Sha256OfFile(self);
+            string version = name.Version.Major + "." + name.Version.Minor + "." + name.Version.Build;
+            SelfUpdate.Verify(self, sha, name.Name, version);
+            Throws<InvalidDataException>(() => SelfUpdate.Verify(self, ExeDigest, name.Name, version));
+            Throws<InvalidDataException>(() => SelfUpdate.Verify(self, sha, "AnderesProgramm", version));
+            Throws<InvalidDataException>(() => SelfUpdate.Verify(self, sha, name.Name, "9.9.9"));
+            Throws<InvalidDataException>(() => SelfUpdate.Verify(self, null, name.Name, version));
+            string text = Path.Combine(NewDir("upd0"), "kaputt.exe");
+            File.WriteAllText(text, "kein Programm");
+            Throws<InvalidDataException>(() => SelfUpdate.Verify(text, Downloader.Sha256OfFile(text), name.Name, version));
+        });
+
+        Run("Selbst-Update: Tausch und Zurücklegen", () =>
+        {
+            string dir = NewDir("upd1");
+            string exe = FakeApp(dir, "alt");
+            File.WriteAllText(SelfUpdate.NewPath(exe), "neu");
+            SelfUpdate.Swap(exe, SelfUpdate.NewPath(exe));
+            Equal("neu", File.ReadAllText(exe), "neue Version an Ort");
+            Equal("alt", File.ReadAllText(SelfUpdate.OldPath(exe)), "alte Version daneben");
+            True(!File.Exists(SelfUpdate.NewPath(exe)), "keine .new mehr");
+            SelfUpdate.RollBack(exe);
+            Equal("alt", File.ReadAllText(exe), "zurückgelegt");
+            True(!File.Exists(SelfUpdate.OldPath(exe)), "keine .old mehr");
+        });
+
+        Run("Selbst-Update: laufendes Programm lässt sich tauschen, Reste werden aufgeräumt", () =>
+        {
+            string dir = NewDir("upd2");
+            string exe = Path.Combine(dir, "app.exe");
+            File.Copy(Path.Combine(Environment.SystemDirectory, "PING.EXE"), exe);
+            File.WriteAllText(SelfUpdate.NewPath(exe), "neu");
+            File.WriteAllText(SelfUpdate.OldPath(exe), "Rest vom letzten Mal");
+            var psi = new ProcessStartInfo(exe, "-n 30 127.0.0.1") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
+            using (Process running = Process.Start(psi))
+            {
+                try
+                {
+                    SelfUpdate.Swap(exe, SelfUpdate.NewPath(exe));
+                    Equal("neu", File.ReadAllText(exe), "getauscht, obwohl die alte läuft");
+                    True(!SelfUpdate.CleanUp(exe, 1), "alte Datei ist noch in Benutzung");
+                }
+                finally { running.Kill(); running.WaitForExit(5000); }
+            }
+            True(SelfUpdate.CleanUp(exe, 20), "nach dem Ende aufgeräumt");
+            True(!File.Exists(SelfUpdate.OldPath(exe)) && !File.Exists(SelfUpdate.NewPath(exe)), "keine Reste");
+            Equal("neu", File.ReadAllText(exe), "neue Version bleibt");
+        });
+
+        Run("Selbst-Update: neue Version erkennt, dass sie gerade aktualisiert wurde", () =>
+        {
+            Equal("1.15.0", SelfUpdate.UpdatedFrom(new[] { "app.exe", "--updated", "1.15.0" }), "mit Version");
+            Equal<string>(null, SelfUpdate.UpdatedFrom(new[] { "app.exe" }), "normaler Start");
+            Equal<string>(null, SelfUpdate.UpdatedFrom(new[] { "app.exe", "--updated" }), "ohne Version");
+            Equal<string>(null, SelfUpdate.UpdatedFrom(new[] { "app.exe", "--updated", "<script>" }), "Unsinn");
+        });
+
+        Run("Selbst-Update: Ordner ohne Schreibrecht wird erkannt", () =>
+        {
+            True(SelfUpdate.CanWriteNextTo(FakeApp(NewDir("upd3"), "x")), "eigener Ordner");
+            bool admin = new System.Security.Principal.WindowsPrincipal(System.Security.Principal.WindowsIdentity.GetCurrent())
+                .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+            True(admin || !SelfUpdate.CanWriteNextTo(Path.Combine(Environment.SystemDirectory, "notepad.exe")), "System32 nur mit Adminrechten");
+            True(!SelfUpdate.CanWriteNextTo(@"Q:\gibt\es\nicht\app.exe"), "fehlender Ordner");
+        });
     }
 
     const string UpdateBase = "https://github.com/cryd-s/retro-roleplay-tool/releases/download/";
