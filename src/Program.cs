@@ -53,6 +53,15 @@ static class Program
             catch (Exception) { return 1; }
         }
 
+        // Admin-Hilfsmodus: Treiber und Laufzeiten für DS4Windows still installieren (wird mit Adminrechten gestartet)
+        if (args.Length > 0 && args[0] == Ds4Windows.ElevatedArgument)
+        {
+            var rest = new string[args.Length - 1];
+            Array.Copy(args, 1, rest, 0, rest.Length);
+            try { return Ds4Windows.RunElevated(rest); }
+            catch (Exception) { return Ds4Windows.VcFailed | Ds4Windows.DotNetFailed | Ds4Windows.ViGEmFailed; }
+        }
+
         // Admin-Hilfsmodus für den Netzwerk Fix (wird mit Adminrechten gestartet)
         if (args.Length == 1 && args[0] == NetworkFix.ElevatedArgument)
         {

@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -58,11 +59,11 @@ public class FeatureRow : NeonControl
 
 // Unterseite „Sonderfunktionen“ mit zwei Reitern:
 // TeamSpeak (TeamSpeak 3, SaltyChat, SaltyChat DNS Fix, TS-Sounds, TS-Moved-nicht-Bugfix) und
-// Fixes & Tools (Rockstar Launcher Fix, Netzwerk Fix, FiveM in Steam, Grafik-Mods).
+// Fixes & Tools (Rockstar Launcher Fix, Netzwerk Fix, DS4Windows, Grafik-Mods).
 public class ExtrasPage : Panel
 {
     readonly MainForm host;
-    readonly FeatureRow ts3Row, saltyRow, dnsRow, soundRow, hostsRow, rockstarRow, networkRow, steamRow, modRow;
+    readonly FeatureRow ts3Row, saltyRow, dnsRow, soundRow, hostsRow, rockstarRow, networkRow, ds4Row, modRow;
     List<DnsAdapter> dnsAdapters = new List<DnsAdapter>();
     bool dnsActive;                      // alle aktiven Verbindungen stehen auf Google DNS
     readonly NeonButton tabTeamSpeak, tabTools;
@@ -75,8 +76,6 @@ public class ExtrasPage : Panel
     string saltyLatest;
     bool hostsActive;
     bool refreshing;
-    string steamDir, steamConfigDir;     // null = Steam oder Konto nicht gefunden
-    bool steamReady;                     // FiveM ist eingetragen und der Controller aktiv
 
     // top = wo der Inhalt beginnt (darüber liegt der Seitenkopf des Hauptfensters)
     public ExtrasPage(MainForm host, int margin, int inner, int top)
@@ -114,8 +113,8 @@ public class ExtrasPage : Panel
         networkRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
             "Netzwerk Fix", "Setzt Winsock und TCP/IP zurück und leert den DNS-Cache.");
         networkRow.Action.Text = "FIX STARTEN";
-        steamRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
-            "FiveM in Steam + Controller", "Aktiviert den Controller über Steam. FiveM muss danach immer über Steam starten.");
+        ds4Row = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
+            "DS4Windows (PS4-/PS5-Controller)", "Macht den Controller zum Xbox-Controller für FiveM. Installiert still mit Treiber.");
         modRow = AddRow(margin, inner, ref y, rowHeight, buttonWidth,
             "Grafik-Mods prüfen", "Zeigt ReShade, ASI-Plugins, fremde DLLs und Mods. Ändert nichts.");
         modRow.Action.Text = "DETAILS";
@@ -128,7 +127,7 @@ public class ExtrasPage : Panel
         hostsRow.Action.Click += async delegate { await Guard(ToggleHostsAsync); };
         rockstarRow.Action.Click += async delegate { await Guard(RunRockstarFixAsync); };
         networkRow.Action.Click += async delegate { await Guard(RunNetworkFixAsync); };
-        steamRow.Action.Click += async delegate { await Guard(ToggleSteamAsync); };
+        ds4Row.Action.Click += async delegate { await Guard(InstallDs4Async); };
         modRow.Action.Click += delegate { ShowModDetails(); };
         ContentHeight = y + Theme.S(12);
         ShowGroup(true);
@@ -137,7 +136,7 @@ public class ExtrasPage : Panel
     void ShowGroup(bool teamSpeak)
     {
         foreach (FeatureRow r in new[] { ts3Row, saltyRow, dnsRow, soundRow, hostsRow }) r.Visible = teamSpeak;
-        foreach (FeatureRow r in new[] { rockstarRow, networkRow, steamRow, modRow }) r.Visible = !teamSpeak;
+        foreach (FeatureRow r in new[] { rockstarRow, networkRow, ds4Row, modRow }) r.Visible = !teamSpeak;
         tabTeamSpeak.Primary = teamSpeak;
         tabTools.Primary = !teamSpeak;
         tabTeamSpeak.Invalidate();
@@ -166,7 +165,7 @@ public class ExtrasPage : Panel
         soundRow.Action.Enabled = enabled && !refreshing && soundsAvailable;
         hostsRow.Action.Enabled = enabled && !refreshing;
         rockstarRow.Action.Enabled = enabled && !refreshing;
-        steamRow.Action.Enabled = enabled && !refreshing && steamConfigDir != null && (steamReady || host.FiveMAppDir != null);
+        ds4Row.Action.Enabled = enabled && !refreshing;
         modRow.Action.Enabled = enabled && !refreshing && modReport != null;
     }
 
@@ -177,7 +176,7 @@ public class ExtrasPage : Panel
         if (refreshing) return;
         refreshing = true;
         SetButtonsEnabled(!host.Busy);
-        foreach (FeatureRow r in new[] { ts3Row, saltyRow, dnsRow, soundRow, hostsRow, rockstarRow, networkRow, steamRow, modRow })
+        foreach (FeatureRow r in new[] { ts3Row, saltyRow, dnsRow, soundRow, hostsRow, rockstarRow, networkRow, ds4Row, modRow })
         {
             r.Value = "wird geprüft …";
             r.ValueColor = Theme.Muted;
@@ -191,8 +190,8 @@ public class ExtrasPage : Panel
         hostsRow.Action.Text = hostsActive ? "ENTFERNEN" : "AKTIVIEREN";
         hostsRow.Action.Primary = !hostsActive;
 
-        // Steam (lokal, schnell)
-        ShowSteamState();
+        // DS4Windows (lokal, schnell)
+        ShowDs4State();
 
         // Grafik-Mods (lokal, schnell)
         ShowModState();
@@ -223,50 +222,19 @@ public class ExtrasPage : Panel
         SetButtonsEnabled(!host.Busy);
     }
 
-    void ShowSteamState()
+    void ShowDs4State()
     {
-        steamReady = false;
-        steamRow.Action.Text = "EINRICHTEN";
-        steamRow.Action.Primary = true;
-        steamRow.ValueColor = Theme.Pink;
-        try
-        {
-            steamDir = SteamLibrary.SteamDir;
-            steamConfigDir = steamDir == null ? null : SteamLibrary.UserConfigDir(steamDir);
-            if (steamDir == null)
-            {
-                steamRow.Value = "Steam ist nicht installiert";
-                return;
-            }
-            if (steamConfigDir == null)
-            {
-                steamRow.Value = "kein Steam-Konto gefunden – bitte einmal in Steam anmelden";
-                return;
-            }
-            SteamStatus s = SteamLibrary.ReadStatus(Path.Combine(steamConfigDir, "shortcuts.vdf"),
-                                                    Path.Combine(steamConfigDir, "localconfig.vdf"));
-            steamReady = s.InSteam && s.ControllerOn;
-            if (steamReady)
-            {
-                steamRow.Value = "Controller aktiv  ✔  FiveM immer über Steam starten!";
-                steamRow.ValueColor = Theme.Orange;
-                steamRow.Action.Text = "ENTFERNEN";
-                steamRow.Action.Primary = false;
-            }
-            else if (host.FiveMAppDir == null)
-            {
-                steamRow.Value = "FiveM nicht gefunden – im Cache Cleaner auswählen";
-            }
-            else
-            {
-                steamRow.Value = s.InSteam ? "in Steam, Controller nicht aktiv" : "nicht in Steam";
-            }
-        }
-        catch (Exception ex)
-        {
-            steamConfigDir = null;
-            steamRow.Value = "Steam-Dateien nicht lesbar: " + ex.Message;
-        }
+        string installed = Ds4Windows.InstalledVersion(Ds4Windows.InstallDir);
+        ShowVersionState(ds4Row, installed, Ds4Windows.Version, false);
+        if (installed == null) return;
+        var missing = new List<string>();
+        if (!Ds4Windows.IsViGEmInstalled()) missing.Add("Treiber ViGEmBus");
+        if (!Ds4Windows.IsDotNet8Installed(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles))) missing.Add(".NET 8");
+        if (missing.Count == 0) return;
+        ds4Row.Value = "installiert " + installed + "  ·  es fehlt: " + string.Join(", ", missing.ToArray());
+        ds4Row.ValueColor = Theme.Pink;
+        ds4Row.Action.Text = "REPARIEREN";
+        ds4Row.Action.Primary = true;
     }
 
     static string RockstarCacheDir
@@ -756,54 +724,92 @@ public class ExtrasPage : Panel
         }
     }
 
-    async Task ToggleSteamAsync()
+    async Task InstallDs4Async()
     {
-        if (steamConfigDir == null) return;
-        bool remove = steamReady;
-        string restart = "Steam überschreibt diese Einstellungen beim Beenden. Deshalb wird Steam kurz geschlossen und " +
-                         "danach wieder gestartet. Laufende Downloads pausieren, ein laufendes Steam-Spiel bitte vorher beenden.";
-        string text = remove
-            ? "FiveM wird aus der Steam-Bibliothek entfernt, die Controller-Einstellung dafür ebenfalls.\n\n" + restart + "\n\nFortfahren?"
-            : "FiveM wird als Nicht-Steam-Spiel in die Steam-Bibliothek eingetragen und Steam Input dafür aktiviert.\n\n" +
-              SteamLibrary.StartViaSteamHint + "\n\n" +
-              restart + "\n\nDer aktuelle Stand wird vorher gespeichert. Fortfahren?";
-        if (!Confirm(text, "FiveM in Steam")) return;
+        Require64Bit();
+        bool needVc = !VcRedist.IsInstalled();
+        bool needDotNet = !Ds4Windows.IsDotNet8Installed(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles));
+        bool needViGEm = !Ds4Windows.IsViGEmInstalled();
+        bool needAdmin = needVc || needDotNet || needViGEm;
 
-        string shortcuts = Path.Combine(steamConfigDir, "shortcuts.vdf");
-        string local = Path.Combine(steamConfigDir, "localconfig.vdf");
-        string dir = steamDir, appDir = host.FiveMAppDir;
+        var parts = new StringBuilder();
+        parts.Append("•  DS4Windows nach ").Append(Ds4Windows.InstallDir).Append(", mit Verknüpfung auf dem Desktop und im Startmenü\n");
+        if (needViGEm) parts.Append("•  Treiber ViGEmBus 1.22 (macht den Controller zum Xbox-Controller)\n");
+        if (needDotNet) parts.Append("•  .NET 8 Desktop Runtime (braucht DS4Windows zum Starten)\n");
+        if (needVc) parts.Append("•  Visual C++ Runtime\n");
+        if (!Confirm("DS4Windows " + Ds4Windows.Version + " wird still installiert:\n\n" + parts +
+                     "\nEigene Profile und Einstellungen bleiben erhalten." +
+                     (needAdmin ? " Windows fragt dabei einmal nach Administratorrechten." : "") + "\n\nFortfahren?",
+                     "DS4Windows installieren"))
+            return;
+        if (Ds4Windows.IsRunning())
+        {
+            if (!Confirm("DS4Windows läuft gerade und wird für die Installation geschlossen.\n\nJetzt schließen?", "DS4Windows läuft"))
+                return;
+            host.SetBusy(true);
+            host.SetStatus("DS4Windows wird geschlossen …", Theme.Text);
+            await Task.Run(() => Ds4Windows.Close());
+        }
 
         host.SetBusy(true);
-        bool wasRunning = SteamLibrary.IsRunning();
-        if (wasRunning)
-        {
-            host.SetStatus("Steam wird geschlossen …", Theme.Text);
-            if (!await Task.Run(() => SteamLibrary.Shutdown(dir, 60000)))
-                throw new TimeoutException("Steam hat sich nicht schließen lassen. Es wurde nichts geändert. " +
-                                           "Läuft noch ein Steam-Spiel? Bitte beenden und noch einmal versuchen.");
-        }
+        string zipFile = Path.Combine(Downloader.WorkDir, "DS4Windows_" + Ds4Windows.Version + "_x64.zip");
+        string viGEmFile = needViGEm ? Path.Combine(Downloader.WorkDir, "ViGEmBus_1.22.0_x64_x86_arm64.exe") : null;
+        string dotNetFile = needDotNet ? Path.Combine(Downloader.WorkDir, "windowsdesktop-runtime-8.0.34-win-x64.exe") : null;
+        string vcFile = needVc ? Path.Combine(Downloader.WorkDir, "vc_redist.x64.exe") : null;
+        int flags = 0;
         try
         {
-            host.SetStatus("Steam-Einstellungen werden geändert …", Theme.Text);
+            await DownloadChecked("DS4Windows " + Ds4Windows.Version, Ds4Windows.ZipUrl, zipFile, Ds4Windows.ZipSha256);
+            if (needViGEm) await DownloadChecked("Treiber ViGEmBus", Ds4Windows.ViGEmUrl, viGEmFile, Ds4Windows.ViGEmSha256);
+            if (needDotNet) await DownloadChecked(".NET 8 Desktop Runtime", Ds4Windows.DotNetUrl, dotNetFile, Ds4Windows.DotNetSha256);
+            if (needVc) await DownloadAsync("Visual C++ Runtime", VcRedist.Url, vcFile);   // Signatur prüft der Admin-Teil
+
+            if (needAdmin)
+            {
+                host.SetStatus("Installiere Treiber und Laufzeiten … (Admin-Abfrage bestätigen)", Theme.Text);
+                flags = await RunElevatedAsync(Ds4Windows.BuildElevatedArguments(vcFile, dotNetFile, viGEmFile));
+                if (flags == Ds4Windows.InvalidInput)
+                    throw new InvalidDataException("Ein Download war nicht vom erwarteten Hersteller signiert. Es wurde nichts installiert.");
+            }
+
+            host.SetStatus("Installiere DS4Windows " + Ds4Windows.Version + " …", Theme.Text);
+            string dir = Ds4Windows.InstallDir;
             await Task.Run(() =>
             {
-                GameConfigFiles.Snapshot(SteamLibrary.BackupDir, shortcuts, local);
-                if (remove) SteamLibrary.RemoveFiveM(shortcuts, local);
-                else SteamLibrary.AddFiveM(shortcuts, local, appDir);
+                Ds4Windows.Extract(zipFile, dir);
+                Ds4Windows.CreateShortcut(Ds4Windows.DesktopShortcut, Ds4Windows.ExePath(dir), "PS4-/PS5-Controller als Xbox-Controller");
+                Ds4Windows.CreateShortcut(Ds4Windows.StartMenuShortcut, Ds4Windows.ExePath(dir), "PS4-/PS5-Controller als Xbox-Controller");
             });
         }
         finally
         {
-            if (wasRunning) SteamLibrary.Start(dir);
+            foreach (string f in new[] { zipFile, viGEmFile, dotNetFile, vcFile })
+                if (f != null) Downloader.TryDelete(f);
         }
 
-        if (remove)
+        bool complete = (flags & (Ds4Windows.VcFailed | Ds4Windows.DotNetFailed | Ds4Windows.ViGEmFailed)) == 0;
+        host.SetStatus(complete ? "Fertig!  DS4Windows " + Ds4Windows.Version + " ist installiert."
+                                : "DS4Windows ist entpackt, aber nicht alles ließ sich installieren.", complete ? Theme.Orange : Theme.Pink);
+        host.SetBusy(false);
+        if (complete)
         {
-            host.SetStatus("Fertig!  FiveM wurde aus der Steam-Bibliothek entfernt.", Theme.Orange);
-            return;
+            if (NeonDialog.Show(FindForm(), Ds4Windows.DoneText(flags) + "\n\nDS4Windows jetzt starten?", "DS4Windows",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+                Ds4Windows.Start(Ds4Windows.InstallDir);
         }
-        host.SetStatus("Fertig!  Wichtig: FiveM ab jetzt immer über Steam starten,\nsonst funktioniert der Controller nicht.", Theme.Orange);
-        NeonDialog.Show(FindForm(), SteamLibrary.SetupDoneText, SteamLibrary.SetupDoneTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        else
+        {
+            NeonDialog.Show(FindForm(), Ds4Windows.DoneText(flags), "DS4Windows", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    async Task DownloadChecked(string what, string url, string file, string sha256)
+    {
+        await DownloadAsync(what, url, file);
+        host.SetStatus("Prüfe " + what + " …", Theme.Text);
+        string hash = await Task.Run(() => Downloader.Sha256OfFile(file));
+        if (!string.Equals(hash, sha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Die Prüfsumme von " + what + " stimmt nicht. Die Datei wurde verworfen, es wurde nichts installiert.");
     }
 
     async Task ToggleHostsAsync()

@@ -26,13 +26,12 @@ static class Tests
             Ts3Tests();
             SaltyTests();
             GtaSettingsTests();
-            SteamTests();
+            Ds4Tests();
             UpdateTests();
             ModCheckTests();
             Ts3SoundTests();
             RockstarTests();
             NetworkFixTests();
-            SteamHintTests();
             SaltyDnsTests();
             DownloadTests();
         }
@@ -904,56 +903,6 @@ static class Tests
         });
     }
 
-    // ---------------------------------------------------------------- Steam
-
-    const string LocalConfig =
-        "\"UserLocalConfigStore\"\n{\n\t\"friends\"\n\t{\n\t\t\"name\"\t\t\"a \\\"b\\\" { c }\"\n\t}\n" +
-        "\t\"Software\"\n\t{\n\t\t\"apps\"\n\t\t{\n\t\t\t\"7\"\n\t\t\t{\n\t\t\t\t\"x\"\t\t\"1\"\n\t\t\t}\n\t\t}\n\t}\n}\n";
-
-    static byte[] Bytes(params object[] parts)
-    {
-        var ms = new MemoryStream();
-        foreach (object p in parts)
-        {
-            if (p is string) { byte[] b = Encoding.UTF8.GetBytes((string)p); ms.Write(b, 0, b.Length); }
-            else if (p is byte[]) { var b = (byte[])p; ms.Write(b, 0, b.Length); }
-            else ms.WriteByte(Convert.ToByte(p));
-        }
-        return ms.ToArray();
-    }
-
-    // Ein fremder Eintrag, wie Steam ihn schreibt, mit einem Feld, das das Tool nicht kennt.
-    static byte[] ForeignEntry()
-    {
-        return Bytes(2, "appid", 0, new byte[] { 0x78, 0x56, 0x34, 0x92 },
-                     1, "AppName", 0, "Mein Spiel", 0,
-                     1, "Exe", 0, "\"D:\\Spiel\\spiel.exe\"", 0,
-                     1, "sortas", 0, "zzz", 0,
-                     0, "tags", 0, 1, "0", 0, "Favorit", 0, 8,
-                     8);
-    }
-
-    static byte[] ShortcutFile(params byte[][] bodies)
-    {
-        var ms = new MemoryStream();
-        byte[] head = Bytes(0, "shortcuts", 0);
-        ms.Write(head, 0, head.Length);
-        for (int i = 0; i < bodies.Length; i++)
-        {
-            byte[] key = Bytes(0, i.ToString(), 0);
-            ms.Write(key, 0, key.Length);
-            ms.Write(bodies[i], 0, bodies[i].Length);
-        }
-        ms.WriteByte(8);
-        ms.WriteByte(8);
-        return ms.ToArray();
-    }
-
-    static void SameBytes(byte[] expected, byte[] actual, string what)
-    {
-        Equal(BitConverter.ToString(expected), BitConverter.ToString(actual), what);
-    }
-
     static void SaltyDnsTests()
     {
         const string Id = "{11111111-2222-3333-4444-555555555555}", Other = "{AAAAAAAA-2222-3333-4444-555555555555}";
@@ -1067,16 +1016,6 @@ static class Tests
             Equal(64, SaltyDns.RunElevated(new[] { "on" }), "fehlendes Argument");
             Equal(64, SaltyDns.RunElevated(new[] { "evil", ok }), "falscher Modus");
             Equal(64, SaltyDns.RunElevated(new[] { "on", @"C:\Windows\dns.txt" }), "falscher Pfad");
-        });
-    }
-
-    static void SteamHintTests()
-    {
-        Run("Steam: Hinweis auf den Start über Steam steht vorn und ist eindeutig", () =>
-        {
-            True(SteamLibrary.SetupDoneTitle.Contains("über Steam starten"), "Titel");
-            True(SteamLibrary.SetupDoneText.StartsWith("Der Controller funktioniert nur, wenn du FiveM über Steam startest"), "erste Zeile");
-            True(SteamLibrary.StartViaSteamHint.StartsWith("WICHTIG"), "Abfrage vorher");
         });
     }
 
@@ -1722,199 +1661,128 @@ static class Tests
         });
     }
 
-    static void SteamTests()
+    // ---------------------------------------------------------------- DS4Windows
+
+    static string Ds4Zip(string dir, params string[] names)
     {
-        Run("Steam: Prüfsumme CRC32 (Standard-Prüfwert)", () =>
-            Equal(0xCBF43926u, SteamShortcuts.Crc32(Encoding.ASCII.GetBytes("123456789")), "CRC32"));
+        string zip = Path.Combine(dir, "ds4.zip");
+        using (var archive = System.IO.Compression.ZipFile.Open(zip, System.IO.Compression.ZipArchiveMode.Create))
+            foreach (string n in names)
+            {
+                var entry = archive.CreateEntry(n);
+                if (n.EndsWith("/")) continue;
+                using (var w = new StreamWriter(entry.Open())) w.Write("neu:" + n);
+            }
+        return zip;
+    }
 
-        Run("Steam: App-ID aus Exe und Name, oberstes Bit gesetzt", () =>
+    static void Ds4Tests()
+    {
+        Run("DS4Windows: Downloads sind fest hinterlegt und geprüft", () =>
         {
-            uint expected = SteamShortcuts.Crc32(Encoding.UTF8.GetBytes("\"C:\\FiveM\\FiveM.exe\"FiveM")) | 0x80000000u;
-            Equal(expected, SteamShortcuts.ComputeAppId("\"C:\\FiveM\\FiveM.exe\"", "FiveM"), "App-ID");
+            foreach (string url in new[] { Ds4Windows.ZipUrl, Ds4Windows.ViGEmUrl, Ds4Windows.DotNetUrl })
+                True(url.StartsWith("https://github.com/schmaldeo/DS4Windows/releases/download/v3.9.9/") ||
+                     url.StartsWith("https://github.com/nefarius/ViGEmBus/releases/download/v1.22.0/") ||
+                     url.StartsWith("https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/8.0."), "Quelle: " + url);
+            foreach (string hash in new[] { Ds4Windows.ZipSha256, Ds4Windows.ViGEmSha256, Ds4Windows.DotNetSha256 })
+                True(System.Text.RegularExpressions.Regex.IsMatch(hash, "^[0-9a-f]{64}$"), "Prüfsumme: " + hash);
+            True(Ds4Windows.InstallDir.EndsWith(@"\AppData\Local\DS4Windows", StringComparison.OrdinalIgnoreCase), "Ordner wie beim Original");
         });
 
-        Run("Steam: fehlende oder leere Datei ergibt leere Liste", () =>
+        Run("DS4Windows: Dateien landen nur im Zielordner", () =>
         {
-            Equal(0, SteamShortcuts.Parse(new byte[0]).Count, "leer");
-            Equal(0, SteamShortcuts.Parse(null).Count, "null");
-            SameBytes(Bytes(0, "shortcuts", 0, 8, 8), SteamShortcuts.Build(new List<SteamShortcut>()), "leere Datei");
+            string dir = @"C:\Users\x\AppData\Local\DS4Windows";
+            Equal(dir + @"\DS4Windows.exe", Ds4Windows.TargetPath("DS4Windows/DS4Windows.exe", dir), "Programm");
+            Equal(dir + @"\Lang\de\DS4Windows.resources.dll", Ds4Windows.TargetPath(@"DS4Windows\Lang\de\DS4Windows.resources.dll", dir), "Unterordner");
+            Equal(dir + @"\NLog.config", Ds4Windows.TargetPath("NLog.config", dir), "ohne Oberordner");
+            Equal<string>(null, Ds4Windows.TargetPath("DS4Windows/Lang/", dir), "Ordner-Eintrag");
+            Equal<string>(null, Ds4Windows.TargetPath("DS4Windows/../../evil.exe", dir), "nach oben");
+            Equal<string>(null, Ds4Windows.TargetPath(@"..\DS4Windows2\x.dll", dir), "Nachbarordner mit gleichem Anfang");
+            Equal<string>(null, Ds4Windows.TargetPath(@"C:\Windows\evil.dll", dir), "absoluter Pfad");
+            Equal<string>(null, Ds4Windows.TargetPath("", dir), "leer");
         });
 
-        Run("Steam: Eintrag hat das erwartete Format", () =>
+        Run("DS4Windows: Entpacken ersetzt Programmdateien, eigene Profile bleiben", () =>
         {
-            SteamShortcut s = SteamShortcuts.Create("FiveM", "C:\\Spiele\\FiveM\\FiveM.exe");
-            uint id = SteamShortcuts.ComputeAppId("\"C:\\Spiele\\FiveM\\FiveM.exe\"", "FiveM");
-            byte[] expected = Bytes(
-                2, "appid", 0, BitConverter.GetBytes(id),
-                1, "AppName", 0, "FiveM", 0,
-                1, "Exe", 0, "\"C:\\Spiele\\FiveM\\FiveM.exe\"", 0,
-                1, "StartDir", 0, "\"C:\\Spiele\\FiveM\\\"", 0,
-                1, "icon", 0, "C:\\Spiele\\FiveM\\FiveM.exe", 0,
-                1, "ShortcutPath", 0, 0,
-                1, "LaunchOptions", 0, 0,
-                2, "IsHidden", 0, 0, 0, 0, 0,
-                2, "AllowDesktopConfig", 0, 1, 0, 0, 0,
-                2, "AllowOverlay", 0, 1, 0, 0, 0,
-                2, "OpenVR", 0, 0, 0, 0, 0,
-                2, "Devkit", 0, 0, 0, 0, 0,
-                1, "DevkitGameID", 0, 0,
-                2, "DevkitOverrideAppID", 0, 0, 0, 0, 0,
-                2, "LastPlayTime", 0, 0, 0, 0, 0,
-                1, "FlatpakAppID", 0, 0,
-                0, "tags", 0, 8,
-                8);
-            SameBytes(expected, s.Body, "Eintrag");
-            Equal(id, s.AppId, "App-ID");
+            string dir = NewDir("ds4");
+            string target = Path.Combine(dir, "DS4Windows");
+            Directory.CreateDirectory(Path.Combine(target, "Profiles"));
+            File.WriteAllText(Path.Combine(target, "Profiles.xml"), "meins");
+            File.WriteAllText(Path.Combine(target, "Profiles", "FiveM.xml"), "mein Profil");
+            File.WriteAllText(Path.Combine(target, "DS4Windows.exe"), "alt");
+            File.SetAttributes(Path.Combine(target, "DS4Windows.exe"), FileAttributes.ReadOnly);
+            string zip = Ds4Zip(dir, "DS4Windows/", "DS4Windows/DS4Windows.exe", "DS4Windows/Lang/de/a.dll", "DS4Windows/../boese.txt");
+
+            Equal(2, Ds4Windows.Extract(zip, target), "Dateien");
+            Equal("neu:DS4Windows/DS4Windows.exe", File.ReadAllText(Path.Combine(target, "DS4Windows.exe")), "Programm ersetzt");
+            True(File.Exists(Path.Combine(target, "Lang", "de", "a.dll")), "Unterordner angelegt");
+            Equal("meins", File.ReadAllText(Path.Combine(target, "Profiles.xml")), "Einstellungen bleiben");
+            Equal("mein Profil", File.ReadAllText(Path.Combine(target, "Profiles", "FiveM.xml")), "Profil bleibt");
+            True(!File.Exists(Path.Combine(dir, "boese.txt")), "nichts außerhalb");
         });
 
-        Run("Steam: neue Datei lässt sich wieder lesen", () =>
+        Run("DS4Windows: Paket ohne Programm wird abgelehnt, nichts entpackt", () =>
         {
-            var list = new List<SteamShortcut> { SteamShortcuts.Create("FiveM", "C:\\Spiele\\FiveM\\FiveM.exe") };
-            List<SteamShortcut> read = SteamShortcuts.Parse(SteamShortcuts.Build(list));
-            Equal(1, read.Count, "Anzahl");
-            Equal("FiveM", read[0].AppName, "Name");
-            Equal("\"C:\\Spiele\\FiveM\\FiveM.exe\"", read[0].Exe, "Exe");
-            True(SteamShortcuts.IsFiveM(read[0]), "als FiveM erkannt");
+            string dir = NewDir("ds4bad");
+            string target = Path.Combine(dir, "DS4Windows");
+            string zip = Ds4Zip(dir, "DS4Windows/NLog.config", "DS4Windows/Lang/DS4Windows.exe");
+            Throws<InvalidDataException>(() => Ds4Windows.Extract(zip, target));
+            True(!Directory.Exists(target), "nichts angelegt");
         });
 
-        Run("Steam: vorhandene Spiele bleiben Byte für Byte erhalten", () =>
+        Run("DS4Windows: .NET 8 wird erkannt, 9 oder 10 reicht nicht", () =>
         {
-            byte[] file = ShortcutFile(ForeignEntry());
-            List<SteamShortcut> list = SteamShortcuts.Parse(file);
-            Equal("Mein Spiel", list[0].AppName, "Name");
-            Equal(0x92345678u, list[0].AppId, "App-ID");
-            True(!SteamShortcuts.IsFiveM(list[0]), "kein FiveM");
-            SameBytes(file, SteamShortcuts.Build(list), "unverändert");
+            string pf = NewDir("ds4net");
+            string shared = Path.Combine(pf, "dotnet", "shared");
+            True(!Ds4Windows.IsDotNet8Installed(pf), "nichts da");
+            Directory.CreateDirectory(Path.Combine(shared, "Microsoft.WindowsDesktop.App", "10.0.1"));
+            Directory.CreateDirectory(Path.Combine(shared, "Microsoft.NETCore.App", "10.0.1"));
+            True(!Ds4Windows.IsDotNet8Installed(pf), "nur .NET 10");
+            Directory.CreateDirectory(Path.Combine(shared, "Microsoft.WindowsDesktop.App", "8.0.23"));
+            True(!Ds4Windows.IsDotNet8Installed(pf), "Basis fehlt");
+            Directory.CreateDirectory(Path.Combine(shared, "Microsoft.NETCore.App", "8.0.23"));
+            True(Ds4Windows.IsDotNet8Installed(pf), "8.0.23 reicht");
         });
 
-        Run("Steam: beschädigte Datei wird abgelehnt", () =>
+        Run("DS4Windows: Verknüpfung zeigt auf das Programm", () =>
         {
-            Throws<InvalidDataException>(() => SteamShortcuts.Parse(Bytes(0, "shortcuts", 0, 0, "0", 0, 1, "AppName")));
-            Throws<InvalidDataException>(() => SteamShortcuts.Parse(Bytes("kein vdf")));
-            Throws<InvalidDataException>(() => SteamShortcuts.Parse(Bytes(0, "shortcuts", 0, 8)));
-            Throws<InvalidDataException>(() => SteamShortcuts.Parse(Bytes(0, "shortcuts", 0, 8, 8, 8)));
-        });
-
-        Run("VDF-Text: Wert lesen, Klammern und Anführungszeichen in Texten stören nicht", () =>
-        {
-            Equal("a \\\"b\\\" { c }", TextVdf.Get(LocalConfig, new[] { "UserLocalConfigStore", "friends" }, "name"), "Text");
-            Equal("1", TextVdf.Get(LocalConfig, new[] { "userlocalconfigstore", "SOFTWARE", "Apps", "7" }, "X"), "Groß/klein egal");
-            Equal<string>(null, TextVdf.Get(LocalConfig, new[] { "UserLocalConfigStore", "apps" }, "x"), "fehlt");
-        });
-
-        Run("VDF-Text: fehlende Abschnitte werden angelegt, Rest bleibt gleich", () =>
-        {
-            string[] path = { "UserLocalConfigStore", "apps", "123" };
-            string result = TextVdf.Set(LocalConfig, path, "UseSteamControllerConfig", "2");
-            string added = "\t\"apps\"\n\t{\n\t\t\"123\"\n\t\t{\n\t\t\t\"UseSteamControllerConfig\"\t\t\"2\"\n\t\t}\n\t}\n";
-            Equal(LocalConfig.Substring(0, LocalConfig.Length - 2) + added + "}\n", result, "Text");
-            Equal("2", TextVdf.Get(result, path, "UseSteamControllerConfig"), "lesen");
-        });
-
-        Run("VDF-Text: vorhandener Wert wird ersetzt, weiterer ergänzt", () =>
-        {
-            string[] path = { "UserLocalConfigStore", "Software", "apps", "7" };
-            string replaced = TextVdf.Set(LocalConfig, path, "x", "9");
-            Equal(LocalConfig.Replace("\"x\"\t\t\"1\"", "\"x\"\t\t\"9\""), replaced, "ersetzt");
-            string added = TextVdf.Set(LocalConfig, path, "y", "5");
-            Equal(LocalConfig.Replace("\"x\"\t\t\"1\"\n", "\"x\"\t\t\"1\"\n\t\t\t\t\"y\"\t\t\"5\"\n"), added, "ergänzt");
-        });
-
-        Run("VDF-Text: Wert entfernen lässt den Rest gleich", () =>
-        {
-            string[] path = { "UserLocalConfigStore", "Software", "apps", "7" };
-            string added = TextVdf.Set(LocalConfig, path, "y", "5");
-            Equal(LocalConfig, TextVdf.Remove(added, path, "y"), "entfernt");
-            Equal(LocalConfig, TextVdf.Remove(LocalConfig, path, "gibtsnicht"), "nichts zu tun");
-        });
-
-        Run("VDF-Text: Windows-Zeilenenden bleiben erhalten", () =>
-        {
-            string crlf = LocalConfig.Replace("\n", "\r\n");
-            string result = TextVdf.Set(crlf, new[] { "UserLocalConfigStore", "apps", "1" }, "k", "v");
-            True(!result.Replace("\r\n", "").Contains("\n"), "nur CRLF");
-        });
-
-        Run("VDF-Text: beschädigter Text wird abgelehnt", () =>
-        {
-            string[] path = { "UserLocalConfigStore", "apps" };
-            Throws<InvalidDataException>(() => TextVdf.Set("\"UserLocalConfigStore\"\n{\n", path, "k", "v"));
-            Throws<InvalidDataException>(() => TextVdf.Set("\"UserLocalConfigStore\"\n{\n}\n}\n", path, "k", "v"));
-            Throws<InvalidDataException>(() => TextVdf.Set("\"UserLocalConfigStore\"\n{\n\t\"a\n}\n", path, "k", "v"));
-            Throws<InvalidDataException>(() => TextVdf.Set("\"Andere\"\n{\n}\n", path, "k", "v"));
-        });
-
-        Run("Steam: aktives Konto hat Vorrang, sonst das zuletzt genutzte", () =>
-        {
-            string login = "\"users\"\n{\n\t\"76561198000000001\"\n\t{\n\t\t\"MostRecent\"\t\t\"0\"\n\t}\n" +
-                           "\t\"76561198060265735\"\n\t{\n\t\t\"MostRecent\"\t\t\"1\"\n\t}\n}\n";
-            var dirs = new List<string> { "0", "39734273", "100000007" };
-            Equal("39734273", SteamLibrary.PickUser(39734273, login, dirs), "aktiv");
-            Equal("100000007", SteamLibrary.PickUser(0, login, dirs), "zuletzt genutzt");
-            Equal("100000007", SteamLibrary.PickUser(999, login, dirs), "aktives Konto ohne Ordner");
-            Equal("39734273", SteamLibrary.PickUser(0, null, new List<string> { "0", "39734273" }), "nur ein Konto");
-            Equal<string>(null, SteamLibrary.PickUser(0, null, dirs), "nicht eindeutig");
-        });
-
-        Run("Steam: FiveM einrichten und wieder entfernen, Fremdes bleibt", () =>
-        {
-            string dir = NewDir("steamlib");
-            string appDir = Path.Combine(dir, "FiveM", "FiveM.app");
-            Directory.CreateDirectory(appDir);
-            string exe = Path.Combine(dir, "FiveM", "FiveM.exe");
+            string dir = NewDir("ds4lnk");
+            string exe = Path.Combine(dir, "DS4Windows", "DS4Windows.exe");
+            Directory.CreateDirectory(Path.GetDirectoryName(exe));
             File.WriteAllText(exe, "x");
-            string shortcuts = Path.Combine(dir, "config", "shortcuts.vdf"), local = Path.Combine(dir, "config", "localconfig.vdf");
-            Directory.CreateDirectory(Path.GetDirectoryName(shortcuts));
-            File.WriteAllBytes(shortcuts, ShortcutFile(ForeignEntry()));
-            File.WriteAllText(local, LocalConfig, new UTF8Encoding(false));
-
-            Equal(false, SteamLibrary.ReadStatus(shortcuts, local).InSteam, "vorher");
-            SteamLibrary.AddFiveM(shortcuts, local, appDir);
-            SteamStatus s = SteamLibrary.ReadStatus(shortcuts, local);
-            True(s.InSteam && s.ControllerOn, "eingerichtet");
-            string appId = SteamShortcuts.ComputeAppId("\"" + exe + "\"", "FiveM").ToString();
-            Equal("2", TextVdf.Get(File.ReadAllText(local), new[] { "UserLocalConfigStore", "apps", appId }, "UseSteamControllerConfig"), "Controller");
-
-            SteamLibrary.AddFiveM(shortcuts, local, appDir);        // zweimal: kein doppelter Eintrag
-            List<SteamShortcut> list = SteamShortcuts.Parse(File.ReadAllBytes(shortcuts));
-            Equal(2, list.Count, "Einträge");
-            Equal("Mein Spiel", list[0].AppName, "fremdes Spiel");
-
-            SteamLibrary.RemoveFiveM(shortcuts, local);
-            Equal(false, SteamLibrary.ReadStatus(shortcuts, local).InSteam, "entfernt");
-            SameBytes(ShortcutFile(ForeignEntry()), File.ReadAllBytes(shortcuts), "fremdes Spiel unverändert");
-            Equal<string>(null, TextVdf.Get(File.ReadAllText(local), new[] { "UserLocalConfigStore", "apps", appId }, "UseSteamControllerConfig"), "Controller entfernt");
+            string link = Path.Combine(dir, "Startmenü", "DS4Windows.lnk");
+            Ds4Windows.CreateShortcut(link, exe, "DS4Windows");
+            True(File.Exists(link), "angelegt");
+            Equal(exe, Ds4Windows.ShortcutTarget(link), "Ziel");
         });
 
-        Run("Steam: ohne vorhandene shortcuts.vdf wird sie angelegt", () =>
+        Run("DS4Windows: Admin-Teil prüft alle Dateien, bevor etwas startet", () =>
         {
-            string dir = NewDir("steamnew");
-            string appDir = Path.Combine(dir, "FiveM", "FiveM.app");
-            Directory.CreateDirectory(appDir);
-            File.WriteAllText(Path.Combine(dir, "FiveM", "FiveM.exe"), "x");
-            string shortcuts = Path.Combine(dir, "config", "shortcuts.vdf"), local = Path.Combine(dir, "config", "localconfig.vdf");
-            Directory.CreateDirectory(Path.GetDirectoryName(shortcuts));
-            File.WriteAllText(local, LocalConfig, new UTF8Encoding(false));
-            SteamLibrary.AddFiveM(shortcuts, local, appDir);
-            True(SteamLibrary.ReadStatus(shortcuts, local).ControllerOn, "eingerichtet");
+            Equal(Ds4Windows.InvalidInput, Ds4Windows.RunElevated(new string[0]), "ohne Angaben");
+            Equal(Ds4Windows.InvalidInput, Ds4Windows.RunElevated(new[] { "-", "-" }), "zu wenige");
+            Equal(Ds4Windows.InvalidInput, Ds4Windows.RunElevated(new[] { "-", "-", @"C:\gibt\es\nicht.exe" }), "fehlende Datei");
+            string cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+            Equal(Ds4Windows.InvalidInput, Ds4Windows.RunElevated(new[] { cmd, "-", "-" }), "Windows-Programm statt Setup");
+            Equal(0, Ds4Windows.RunElevated(new[] { "-", "-", "-" }), "nichts zu tun");
+            True(Ds4Windows.IsSubjectOf("CN=Nefarius Software Solutions e.U., O=Nefarius Software Solutions e.U., L=Wels, C=AT", "Nefarius Software Solutions e.U."), "ViGEm");
+            True(Ds4Windows.IsSubjectOf("CN=.NET, O=Microsoft Corporation, L=Redmond, S=Washington, C=US", "Microsoft Corporation"), ".NET");
+            True(!Ds4Windows.IsSubjectOf("CN=x, O=Microsoft Corporation Fake, C=US", "Microsoft Corporation"), "ähnlicher Name");
+            True(!Ds4Windows.IsSubjectOf("CN=x, O=Nefarius Software SolutionsXe.U., C=AT", "Nefarius Software Solutions e.U."), "Punkt ist kein Platzhalter");
+            Equal(Ds4Windows.ElevatedArgument + " \"-\" \"C:\\a b\\net.exe\" \"-\"",
+                  Ds4Windows.BuildElevatedArguments(null, @"C:\a b\net.exe", null), "Argumente");
         });
 
-        Run("Steam: fehlende FiveM.exe oder kaputte Datei ändert nichts", () =>
+        Run("DS4Windows: Fehlercodes und Fertig-Text", () =>
         {
-            string dir = NewDir("steamfail");
-            string appDir = Path.Combine(dir, "FiveM", "FiveM.app");
-            Directory.CreateDirectory(appDir);
-            string shortcuts = Path.Combine(dir, "shortcuts.vdf"), local = Path.Combine(dir, "localconfig.vdf");
-            File.WriteAllBytes(shortcuts, ShortcutFile(ForeignEntry()));
-            File.WriteAllText(local, LocalConfig, new UTF8Encoding(false));
-            Throws<FileNotFoundException>(() => SteamLibrary.AddFiveM(shortcuts, local, appDir));
-            Equal(LocalConfig, File.ReadAllText(local), "localconfig unverändert");
-
-            File.WriteAllText(Path.Combine(dir, "FiveM", "FiveM.exe"), "x");
-            File.WriteAllText(local, "\"UserLocalConfigStore\"\n{\n", new UTF8Encoding(false));
-            byte[] before = File.ReadAllBytes(shortcuts);
-            Throws<InvalidDataException>(() => SteamLibrary.AddFiveM(shortcuts, local, appDir));
-            SameBytes(before, File.ReadAllBytes(shortcuts), "shortcuts unverändert");
+            foreach (int ok in new[] { 0, 3010, 1641, 1638 }) True(Ds4Windows.IsSuccess(ok), "ok: " + ok);
+            foreach (int bad in new[] { 1, 1602, 1603, -1 }) True(!Ds4Windows.IsSuccess(bad), "Fehler: " + bad);
+            True(Ds4Windows.NeedsRestart(3010) && !Ds4Windows.NeedsRestart(0), "Neustart");
+            string fine = Ds4Windows.DoneText(0);
+            True(fine.StartsWith("DS4Windows 3.9.9 ist installiert"), "Erfolg vorn");
+            True(!fine.Contains("neu starten"), "kein Neustart ohne Grund");
+            True(Ds4Windows.DoneText(Ds4Windows.RestartNeeded).Contains("neu starten"), "Neustart genannt");
+            string bad2 = Ds4Windows.DoneText(Ds4Windows.ViGEmFailed | Ds4Windows.DotNetFailed);
+            True(bad2.Contains("Treiber ViGEmBus") && bad2.Contains(".NET 8") && !bad2.Contains("Visual C++"), "genau die Fehler: " + bad2);
         });
     }
 

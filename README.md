@@ -45,10 +45,11 @@ Alle Versionen (auch die exe einzeln) findest du unter [Releases](https://github
   - Danach im Launcher neu anmelden und bei Verbindungsproblemen den PC neu starten; VPN, Tailscale und eigene DNS-Filter vorher selbst ausschalten
 - Netzwerk Fix: `netsh winsock reset`, `netsh int ip reset` und `ipconfig /flushdns`, danach den PC neu starten
   - Feste IP-Adressen und eigene DNS-Einstellungen können verloren gehen; die Netzwerkdaten werden vorher in eine Textdatei gespeichert
-- FiveM als Nicht-Steam-Spiel in die Steam-Bibliothek eintragen und Steam Input dafür aktivieren, oder beides wieder entfernen
-  - **FiveM muss danach immer über Steam gestartet werden, sonst funktioniert der Controller nicht**
-  - Steam wird dafür normal geschlossen und danach wieder gestartet; vorher wird der aktuelle Stand gespeichert
-  - **Noch nicht mit echtem Steam getestet.** FiveM unterstützt Steam Input nicht offiziell, der Controller funktioniert also vielleicht nicht in jedem Fall
+- DS4Windows still installieren: PS4-/PS5-Controller erscheinen als Xbox-Controller, den FiveM versteht
+  - DS4Windows 3.9.9 (letzte Version der Fortführung von schmaldeo) nach `%LOCALAPPDATA%\DS4Windows`, mit Verknüpfung auf dem Desktop und im Startmenü; eigene Profile bleiben erhalten
+  - Nur wenn sie fehlen: Treiber ViGEmBus 1.22, .NET 8 Desktop Runtime 8.0.34 und Visual C++ Runtime, mit einer einzigen Admin-Abfrage
+  - Alle Downloads mit fest hinterlegten Prüfsummen bzw. geprüfter Hersteller-Signatur
+  - DS4Windows muss beim Spielen laufen
 
 **Grafik-Shader-Cache (im Cache Cleaner, Option)**
 - Leert bei Hängern und Grafikfehlern den Shader-Cache von NVIDIA, AMD, Intel und Windows
